@@ -1,0 +1,48 @@
+// OPM structural view — Origin System aggregation-participation
+// Filled diamond = consists of
+// Gemini is environmental (dashed): we own prompts, not the model
+
+digraph STRUCT {
+  graph [
+    rankdir=TB
+    fontname="Helvetica"
+    fontsize=16
+    label="Structural — Origin System aggregation"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    nodesep=0.4
+    ranksep=0.8
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9, color="#222222"]
+
+  Origin [shape=box, style="filled,bold", fillcolor="#BBDEFB", penwidth=2, label="Origin System"]
+
+  PWA    [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer PWA\nTypeScript · Next.js"]
+  Desk   [shape=box, style="filled", fillcolor="#FFF8E1", label="Partner Desk\nTypeScript · Next.js"]
+  API    [shape=box, style="filled", fillcolor="#E3F2FD", label="Origin API\nPython 3.12 · FastAPI"]
+  Store  [shape=box, style="filled", fillcolor="#E3F2FD", label="Event Store\nFirestore"]
+  Files  [shape=box, style="filled", fillcolor="#E3F2FD", label="Evidence Store\nCloud Storage"]
+  Rules  [shape=box, style="filled", fillcolor="#E3F2FD", label="Rule Pack\nYAML"]
+  Wallet [shape=box, style="filled", fillcolor="#E3F2FD", label="Consent Wallet"]
+  Adapt  [shape=box, style="filled", fillcolor="#E3F2FD", label="Import Adapter"]
+
+  Gemini [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)"]
+
+  { rank=same; PWA; Desk; API }
+  { rank=same; Store; Files; Rules; Wallet; Adapt }
+
+  Origin -> PWA    [arrowhead=diamond, label="consists of"]
+  Origin -> Desk   [arrowhead=diamond]
+  Origin -> API    [arrowhead=diamond]
+  Origin -> Store  [arrowhead=diamond]
+  Origin -> Files  [arrowhead=diamond]
+  Origin -> Rules  [arrowhead=diamond]
+  Origin -> Wallet [arrowhead=diamond]
+  Origin -> Adapt  [arrowhead=diamond]
+
+  PWA -> API [arrowhead=normal, label="OpenAPI + JWT"]
+  Desk -> API [arrowhead=normal, label="OpenAPI + JWT"]
+  Gemini -> API [style=dashed, arrowhead=odot, label="instrument of\nCapturing & Explaining"]
+}

@@ -1,0 +1,109 @@
+// OPM SD1 — Sharing in-zoomed
+// Cluster stands for the enlarged Sharing process (OPM in-zoom)
+// Main chain is top-down; enablers sit on the left; consent states sit on the right.
+
+digraph SD1 {
+  graph [
+    rankdir=TB
+    fontname="Helvetica"
+    fontsize=16
+    label="SD1 — Sharing in-zoomed"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    compound=true
+    nodesep=0.4
+    ranksep=0.45
+    splines=true
+    newrank=true
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=8, color="#222222"]
+
+  Farmer   [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer"]
+  Gemini   [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)\nplain talk in farmer locale"]
+  RulePack [shape=box, style="filled", fillcolor="#E3F2FD", label="Rule Pack"]
+  Partner  [shape=box, style="filled", fillcolor="#FFF8E1", label="Value Chain Partner"]
+
+  { rank=same; Farmer; Gemini; RulePack; Partner }
+
+  subgraph cluster_Sharing {
+    label="Sharing"
+    fontsize=14
+    fontname="Helvetica"
+    style="rounded,filled,bold"
+    color="#1565C0"
+    fillcolor="#E3F2FD"
+    penwidth=2
+    margin=22
+
+    Capturing  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Capturing"]
+    Event      [shape=box, style="filled", fillcolor="#FFFFFF", label="Farm Event"]
+    Compiling  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Compiling"]
+    Pack       [shape=box, style="filled", fillcolor="#FFFFFF", label="Share Pack"]
+    Consenting [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Consenting"]
+    Consent    [shape=box, style="filled", fillcolor="#FFFFFF", label="Consent"]
+    Delivering [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Delivering"]
+    Token      [shape=box, style="filled", fillcolor="#FFFFFF", label="Access Token"]
+    Receipt    [shape=box, style="filled", fillcolor="#FFFFFF", label="Share Receipt"]
+    Revoking   [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Revoking"]
+
+    Expiring       [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Expiring"]
+
+    Refusing       [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Refusing"]
+
+    ConsentDraft   [shape=box, style="rounded,filled", fillcolor="#FFF3E0", label="draft"]
+    ConsentBound   [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="purpose-bound"]
+    ConsentRefused [shape=box, style="rounded,filled", fillcolor="#FFE0B2", label="refused"]
+    ConsentExpired [shape=box, style="rounded,filled", fillcolor="#E0E0E0", label="expired"]
+    ConsentRevoked [shape=box, style="rounded,filled", fillcolor="#FFCDD2", label="revoked"]
+
+    { rank=same; Capturing }
+    { rank=same; Event }
+    { rank=same; Compiling }
+    { rank=same; Pack }
+    { rank=same; Consenting; Refusing; ConsentDraft }
+    { rank=same; Consent; ConsentBound; ConsentRefused }
+    { rank=same; Delivering }
+    { rank=same; Token; Receipt }
+    { rank=same; Revoking; ConsentRevoked }
+    { rank=same; Expiring; ConsentExpired }
+
+    Capturing  -> Event     [arrowhead=normal, label="yields"]
+    Event      -> Compiling [arrowhead=normal, label="consumes"]
+    Compiling  -> Pack      [arrowhead=normal, label="yields"]
+    Pack       -> Consenting [arrowhead=odot,  label="requires"]
+    Consenting -> Consent   [arrowhead=normal, label="yields"]
+    Consent    -> Delivering [arrowhead=odot,  label="requires"]
+    Delivering -> Token     [arrowhead=normal, label="yields"]
+    Delivering -> Receipt   [arrowhead=normal, label="yields"]
+    Receipt    -> Revoking  [arrowhead=odot,   label="requires"]
+
+    Revoking -> Expiring [style=invis]
+
+    Consent -> ConsentDraft   [style=dashed, arrowhead=none]
+    Consent -> ConsentBound   [style=dashed, arrowhead=none]
+    Consent -> ConsentRefused [style=dashed, arrowhead=none]
+    Consent -> ConsentExpired [style=dashed, arrowhead=none]
+    Consent -> ConsentRevoked [style=dashed, arrowhead=none]
+    Consenting -> ConsentBound   [style=dotted, arrowhead=normal, label="to"]
+    Refusing   -> ConsentRefused [style=dotted, arrowhead=normal, label="to"]
+    Expiring   -> ConsentExpired [style=dotted, arrowhead=normal, label="to"]
+    Revoking   -> ConsentRevoked [style=dotted, arrowhead=normal, label="to"]
+  }
+
+  Requesting [shape=ellipse, style="filled", fillcolor="#FFF8E1", label="Requesting"]
+  Request    [shape=box, style="filled", fillcolor="#FFF8E1", label="Partner Request"]
+
+  Farmer   -> Capturing  [arrowhead=dot,  label="handles"]
+  Farmer   -> Consenting [arrowhead=dot,  label="handles"]
+  Farmer   -> Refusing   [arrowhead=dot,  label="handles"]
+  Farmer   -> Revoking   [arrowhead=dot,  label="handles"]
+  Gemini   -> Capturing  [arrowhead=odot, label="requires"]
+  Gemini   -> Consenting [arrowhead=odot, label="requires"]
+  RulePack -> Compiling  [arrowhead=odot, label="requires"]
+  Partner  -> Delivering [arrowhead=odot, label="requires"]
+  Partner  -> Requesting [arrowhead=dot,  label="handles"]
+  Requesting -> Request  [arrowhead=normal, label="yields"]
+  Request  -> Consenting [arrowhead=normal, label="consumes", constraint=false]
+}

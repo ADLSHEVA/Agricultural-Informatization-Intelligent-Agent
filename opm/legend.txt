@@ -1,0 +1,49 @@
+// OPM → Graphviz legend used in the Origin diagrams
+
+digraph LEGEND {
+  graph [
+    rankdir=LR
+    fontname="Helvetica"
+    fontsize=16
+    label="OPM notation (ISO/PAS 19450) as used in these DOT files"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    nodesep=0.5
+    ranksep=0.8
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9]
+
+  subgraph cluster_entities {
+    label="Entities"
+    style="rounded,filled"
+    fillcolor="#FAFAFA"
+    color="#9E9E9E"
+
+    Obj  [shape=box, style="filled", fillcolor="#E3F2FD", label="Object"]
+    Proc [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Process"]
+    St   [shape=box, style="rounded,filled", fillcolor="#FFF3E0", label="Object state"]
+  }
+
+  subgraph cluster_links {
+    label="Procedural & structural links"
+    style="rounded,filled"
+    fillcolor="#FAFAFA"
+    color="#9E9E9E"
+
+    A1 [shape=box, style="filled", fillcolor="#FFF8E1", label="Agent (human)"]
+    P1 [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Process"]
+    I1 [shape=box, style="filled", fillcolor="#E3F2FD", label="Instrument"]
+    C1 [shape=box, style="filled", fillcolor="#E3F2FD", label="Consumee"]
+    R1 [shape=box, style="filled", fillcolor="#E8F5E9", label="Resultee"]
+    W1 [shape=box, style="filled,bold", fillcolor="#BBDEFB", label="Whole"]
+    Pa [shape=box, style="filled", fillcolor="#E3F2FD", label="Part"]
+
+    A1 -> P1 [arrowhead=dot,    label="handles"]
+    I1 -> P1 [arrowhead=odot,   label="requires"]
+    C1 -> P1 [arrowhead=normal, label="consumes"]
+    P1 -> R1 [arrowhead=normal, label="yields"]
+    W1 -> Pa [arrowhead=diamond, label="consists of"]
+  }
+}

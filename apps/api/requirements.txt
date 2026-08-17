@@ -1,0 +1,9 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+pydantic==2.11.7
+pydantic-settings==2.10.1
+python-multipart==0.0.20
+pyyaml==6.0.2
+shapely==2.1.1
+google-genai==1.29.0
+httpx==0.28.1

@@ -1,0 +1,15 @@
+apps/api/data/
+apps/api/**/__pycache__/
+apps/api/.pytest_cache/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/tsconfig.tsbuildinfo
+.codegraph/
+.pytest_cache/
+*.pyc
+.env
+.env.local
+
+# local product planning — do not publish
+Origin-产品前期规划-Q&A.txt
+

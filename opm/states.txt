@@ -1,0 +1,52 @@
+// OPM state-specified transforming links — Consent lifecycle
+// Rounded rectangle = object state
+// Thick contour = initial; double contour = final
+// Process changes Object from input-state to output-state
+
+digraph STATES {
+  graph [
+    rankdir=LR
+    fontname="Helvetica"
+    fontsize=16
+    label="Consent states — Binding / Refusing / Expiring / Revoking"
+    labelloc=t
+    pad=0.45
+    bgcolor="white"
+    nodesep=0.55
+    ranksep=0.85
+    newrank=true
+    splines=true
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9, color="#222222"]
+
+  subgraph cluster_Consent {
+    label="Consent"
+    fontsize=13
+    fontname="Helvetica"
+    style="rounded,filled"
+    color="#37474F"
+    fillcolor="#ECEFF1"
+    margin=16
+
+    draft    [shape=box, style="rounded,filled,bold", fillcolor="#FFF3E0", penwidth=2.4, label="draft\n(initial)"]
+    bound    [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="purpose-bound"]
+    refused  [shape=box, style="rounded,filled", fillcolor="#FFE0B2", peripheries=2, label="refused\n(final)"]
+    expired  [shape=box, style="rounded,filled", fillcolor="#E0E0E0", peripheries=2, label="expired\n(final)"]
+    revoked  [shape=box, style="rounded,filled", fillcolor="#FFCDD2", peripheries=2, label="revoked\n(final)"]
+  }
+
+  Binding  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Binding"]
+  Refusing [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Refusing"]
+  Expiring [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Expiring"]
+  Revoking [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Revoking"]
+
+  draft    -> Binding  [arrowhead=normal, label="from"]
+  Binding  -> bound    [arrowhead=normal, label="to"]
+  draft    -> Refusing [arrowhead=normal, label="from"]
+  Refusing -> refused  [arrowhead=normal, label="to"]
+  bound    -> Expiring [arrowhead=normal, label="from"]
+  Expiring -> expired  [arrowhead=normal, label="to"]
+  bound    -> Revoking [arrowhead=normal, label="from"]
+  Revoking -> revoked  [arrowhead=normal, label="to"]
+}

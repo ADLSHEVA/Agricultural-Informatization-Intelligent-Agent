@@ -1,0 +1,106 @@
+// Origin stack architecture — TypeScript web + Python API
+// English labels. Two Cloud Run services, Gemini only on the API.
+
+digraph STACK {
+  graph [
+    rankdir=TB
+    fontname="Helvetica"
+    fontsize=20
+    label="Origin Stack Architecture\nTypeScript PWA  ·  Python FastAPI  ·  Gemini behind the API"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    compound=true
+    newrank=true
+    nodesep=0.4
+    ranksep=0.6
+    splines=true
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=8, color="#37474F"]
+
+  Farmer  [shape=box, style="filled,bold", fillcolor="#FFF8E1", label="Farmer"]
+  Partner [shape=box, style="filled,bold", fillcolor="#FFF8E1", label="Value Chain Partner"]
+  { rank=same; Farmer; Partner }
+
+  subgraph cluster_web {
+    label="apps/web  ·  TypeScript  ·  origin-web (Cloud Run, min=0)"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#F9A825"
+    fillcolor="#FFFDE7"
+    penwidth=1.8
+    margin=16
+
+    Today    [shape=box, style="filled", fillcolor="#FFFFFF", group=w1, label="Today  /"]
+    Capture  [shape=box, style="filled", fillcolor="#FFFFFF", group=w2, label="Speak / Snap  /capture"]
+    Consent  [shape=box, style="filled", fillcolor="#FFFFFF", group=w3, label="Consent  /consent/[id]"]
+    Receipts [shape=box, style="filled", fillcolor="#FFFFFF", group=w4, label="Who has it  /receipts"]
+    Desk     [shape=box, style="filled", fillcolor="#E0F7FA", group=w5, label="Partner Desk  /desk\nfarmer never navigates here"]
+
+    Today -> Capture -> Consent -> Receipts [style=invis, weight=20]
+    { rank=same; Today; Capture; Consent; Receipts; Desk }
+  }
+
+  subgraph cluster_api {
+    label="apps/api  ·  Python 3.12  ·  origin-api (Cloud Run, min=0)"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled,bold"
+    color="#1565C0"
+    fillcolor="#E3F2FD"
+    penwidth=2
+    margin=16
+
+    CapMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="capture.py\nFlash-Lite extract"]
+    CmpMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="compile.py\nYAML · no LLM"]
+    CnsMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="consent.py\nexplain + bind + refuse + revoke"]
+    DelMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="deliver.py\ntoken + receipt"]
+    GeoMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="geometry.py\nGAEC 4 shapely"]
+
+    CapMod -> CmpMod -> CnsMod -> DelMod [style=invis, weight=20]
+    { rank=same; CapMod; CmpMod; CnsMod; GeoMod; DelMod }
+  }
+
+  subgraph cluster_gcp {
+    label="Google Cloud  ·  europe-west1"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#6A1B9A"
+    fillcolor="#F3E5F5"
+    penwidth=1.6
+    margin=16
+
+    Auth   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firebase Auth"]
+    Fire   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firestore"]
+    Gcs    [shape=box, style="filled", fillcolor="#FFFFFF", label="Cloud Storage"]
+    Secret [shape=box, style="filled", fillcolor="#FFFFFF", label="Secret Manager"]
+    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Vertex Gemini Flash-Lite\nfarmer locale · cache · quota · cap"]
+
+    { rank=same; Auth; Fire; Gcs; Secret; Gemini }
+  }
+
+  Farmer  -> Today   [arrowhead=dot,  label="handles"]
+  Partner -> Desk    [arrowhead=odot, label="requires"]
+
+  Capture  -> CapMod [arrowhead=normal, label="POST /v1/events"]
+  Consent  -> CnsMod [arrowhead=normal, label="POST /v1/consents"]
+  Receipts -> CnsMod [arrowhead=normal, label="revoke"]
+  Desk     -> DelMod [arrowhead=normal, label="GET /v1/desk/packs"]
+
+  CapMod -> CmpMod [arrowhead=normal]
+  CmpMod -> CnsMod [arrowhead=normal]
+  CnsMod -> DelMod [arrowhead=normal]
+  GeoMod -> CmpMod [arrowhead=odot, label="requires"]
+
+  Gemini -> CapMod [arrowhead=odot, style=dashed]
+  Gemini -> CnsMod [arrowhead=odot, style=dashed]
+  Secret -> Gemini [style=dashed, arrowhead=none]
+  CapMod -> Fire   [style=dashed, arrowhead=normal]
+  CapMod -> Gcs    [style=dashed, arrowhead=normal]
+  CmpMod -> Fire   [style=dashed, arrowhead=normal]
+  CnsMod -> Fire   [style=dashed, arrowhead=normal]
+  DelMod -> Fire   [style=dashed, arrowhead=normal]
+}

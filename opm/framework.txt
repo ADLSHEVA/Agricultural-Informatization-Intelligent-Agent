@@ -1,0 +1,193 @@
+// Origin overall framework — one-page architecture
+// OPM entities: Object = box; Process = ellipse
+// Agent = filled dot; Instrument = empty circle
+// All labels in English
+
+digraph FRAMEWORK {
+  graph [
+    rankdir=TB
+    fontname="Helvetica"
+    fontsize=20
+    label="Origin Overall Framework\nCapture once · purpose-bound sharing · farmer in control"
+    labelloc=t
+    pad=0.35
+    bgcolor="white"
+    compound=true
+    newrank=true
+    nodesep=0.35
+    ranksep=0.45
+    splines=true
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=8, color="#37474F"]
+
+  Farmer  [shape=box, style="filled,bold", fillcolor="#FFF8E1", penwidth=1.6, label="Farmer\n(data originator)"]
+  Partner [shape=box, style="filled,bold", fillcolor="#FFF8E1", penwidth=1.6, label="Value Chain Partner\nco-op / mill / retailer / certifier"]
+
+  { rank=same; Farmer; Partner }
+
+  subgraph cluster_pwa {
+    label="Farmer PWA — four screens only · offline queue"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#F9A825"
+    fillcolor="#FFFDE7"
+    penwidth=1.6
+    margin=14
+
+    Today [shape=box, style="filled", fillcolor="#FFFFFF", label="1 Today\none card"]
+    Speak [shape=box, style="filled", fillcolor="#FFFFFF", label="2 Speak / Snap\nvoice or product photo"]
+    Agree [shape=box, style="filled", fillcolor="#FFFFFF", label="3 Consent\nthree lines in farmer locale\ngive / refuse"]
+    Who   [shape=box, style="filled", fillcolor="#FFFFFF", label="4 Who has it\nreceipt · revoke\nexport · erase"]
+
+    { rank=same; Today; Speak; Agree; Who }
+    Today -> Speak [arrowhead=normal, style=bold, color="#F9A825"]
+    Speak -> Agree [arrowhead=normal, style=bold, color="#F9A825"]
+    Agree -> Who   [arrowhead=normal, style=bold, color="#F9A825"]
+  }
+
+  subgraph cluster_core {
+    label="Origin core — Sharing in-zoomed"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled,bold"
+    color="#1565C0"
+    fillcolor="#E3F2FD"
+    penwidth=2
+    margin=16
+
+    Capturing  [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c1, label="Capturing"]
+    Compiling  [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c2, label="Compiling"]
+    Consenting [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c3, label="Consenting"]
+    Delivering [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c4, label="Delivering"]
+    Revoking   [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c5, label="Revoking"]
+    Refusing   [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c5b, label="Refusing"]
+    Expiring   [shape=ellipse, style="filled", fillcolor="#BBDEFB", group=c6, label="Expiring\n(until passes)"]
+    Exporting  [shape=ellipse, style="filled", fillcolor="#C8E6C9", group=c7, label="Exporting"]
+    Erasing    [shape=ellipse, style="filled", fillcolor="#FFCCBC", group=c8, label="Erasing"]
+
+    Event   [shape=box, style="filled", fillcolor="#FFFFFF", group=c1, label="Farm Event"]
+    Pack    [shape=box, style="filled", fillcolor="#FFFFFF", group=c2, label="Share Pack"]
+    Consent [shape=box, style="filled", fillcolor="#FFFFFF", group=c3, label="Purpose-bound Consent"]
+    Token   [shape=box, style="filled", fillcolor="#FFFFFF", group=c4, label="Access Token"]
+    Receipt  [shape=box, style="filled", fillcolor="#E8F5E9", group=c5, label="Share Receipt"]
+    Portable [shape=box, style="filled", fillcolor="#E8F5E9", group=c7, label="Portable Pack\nGDPR Art. 20"]
+
+    { rank=same; Capturing; Compiling; Consenting; Delivering; Revoking; Refusing; Expiring }
+    { rank=same; Event; Pack; Consent; Token; Receipt; Portable }
+
+    Capturing -> Compiling  [style=invis, weight=20]
+    Compiling -> Consenting [style=invis, weight=20]
+    Consenting -> Delivering [style=invis, weight=20]
+    Delivering -> Revoking  [style=invis, weight=20]
+    Revoking -> Expiring    [style=invis, weight=20]
+
+    Capturing  -> Event      [arrowhead=normal, label="yields"]
+    Event      -> Compiling  [arrowhead=normal, label="consumes", constraint=false]
+    Compiling  -> Pack       [arrowhead=normal, label="yields"]
+    Pack       -> Consenting [arrowhead=odot,   label="requires", constraint=false]
+    Consenting -> Consent    [arrowhead=normal, label="yields"]
+    Consent    -> Delivering [arrowhead=odot,   label="requires", constraint=false]
+    Delivering -> Token      [arrowhead=normal, label="yields"]
+    Delivering -> Receipt    [arrowhead=normal, label="yields", constraint=false]
+    Receipt    -> Revoking   [arrowhead=odot,   label="requires", constraint=false]
+    Revoking   -> Consent    [dir=both, arrowhead=normal, arrowtail=normal, label="affects", constraint=false]
+    Expiring   -> Consent    [arrowhead=normal, label="affects", constraint=false]
+    Expiring   -> Token      [arrowhead=normal, label="disables", constraint=false]
+    Refusing   -> Consent    [arrowhead=normal, label="to refused", constraint=false]
+    Exporting  -> Portable   [arrowhead=normal, label="yields", constraint=false]
+    Erasing    -> Event      [arrowhead=normal, label="consumes", constraint=false]
+    Erasing    -> Token      [arrowhead=normal, label="disables", constraint=false]
+  }
+
+  subgraph cluster_data {
+    label="Data and rules"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#2E7D32"
+    fillcolor="#E8F5E9"
+    penwidth=1.6
+    margin=14
+
+    EventStore [shape=box, style="filled", fillcolor="#FFFFFF", label="Event Store"]
+    Evidence   [shape=box, style="filled", fillcolor="#FFFFFF", label="Evidence Store\nphotos / share packs"]
+    RulePack   [shape=box, style="filled", fillcolor="#FFFFFF", label="Rule Pack (YAML)\nGAEC / questionnaire / minimise"]
+    Wallet     [shape=box, style="filled", fillcolor="#FFFFFF", label="Consent Wallet\ndraft → bound | refused\nbound → expired / revoked"]
+    Adapter    [shape=box, style="filled", fillcolor="#FFFFFF", label="Import Adapter\nISOXML / LPIS sketch"]
+
+    { rank=same; EventStore; Evidence; RulePack; Wallet; Adapter }
+  }
+
+  subgraph cluster_gcp {
+    label="Google Cloud  ·  europe-west1  ·  two Cloud Run services  ·  min=0"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#6A1B9A"
+    fillcolor="#F3E5F5"
+    penwidth=1.6
+    margin=14
+
+    WebRun [shape=box, style="filled,bold", fillcolor="#FFF8E1", label="origin-web\nTypeScript · Next.js PWA\nCloud Run min=0"]
+    ApiRun [shape=box, style="filled,bold", fillcolor="#E3F2FD", label="origin-api\nPython 3.12 · FastAPI\nCloud Run min=0"]
+    Fire   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firestore\nevents · packs · consents"]
+    Gcs    [shape=box, style="filled", fillcolor="#FFFFFF", label="Cloud Storage\nevidence · photos\n30-day lifecycle"]
+    Auth   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firebase Auth\nJWT verify"]
+    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Gemini Flash-Lite\nextract + consent in farmer locale\n(environmental · no Pro)\ncontext cache · daily quota · billing cap\nkey only on origin-api"]
+
+    { rank=same; WebRun; ApiRun; Fire; Gcs; Auth; Gemini }
+    WebRun -> ApiRun [arrowhead=normal, label="HTTPS + JWT\nOpenAPI"]
+    Auth -> ApiRun   [arrowhead=odot, style=dashed, label="requires"]
+  }
+
+  subgraph cluster_desk {
+    label="Partner Desk — farmer never enters"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#00838F"
+    fillcolor="#E0F7FA"
+    penwidth=1.6
+    margin=14
+
+    Requesting [shape=ellipse, style="filled", fillcolor="#B2EBF2", label="Requesting"]
+    Request    [shape=box, style="filled", fillcolor="#FFFFFF", label="Partner Request\npurpose + field list"]
+    Desk       [shape=box, style="filled", fillcolor="#FFFFFF", label="Read-only share pack"]
+    Pass       [shape=box, style="filled", fillcolor="#FFFFFF", label="Lot passport"]
+    Grey       [shape=box, style="filled", fillcolor="#FFFFFF", label="File greys out\non revoke / expiry"]
+
+    { rank=same; Requesting; Request; Desk; Pass; Grey }
+  }
+
+  Farmer -> Today      [arrowhead=dot,    label="handles"]
+  Speak  -> Capturing  [arrowhead=normal, label="records"]
+  Agree  -> Consenting [arrowhead=dot,    label="handles"]
+  Agree  -> Refusing   [arrowhead=dot,    label="handles"]
+  Who    -> Revoking   [arrowhead=dot,    label="handles"]
+  Who    -> Exporting  [arrowhead=dot,    label="handles"]
+  Who    -> Erasing    [arrowhead=dot,    label="handles"]
+
+  Partner    -> Desk       [arrowhead=odot,   label="requires"]
+  Partner    -> Requesting [arrowhead=dot,    label="handles"]
+  Requesting -> Request    [arrowhead=normal, label="yields"]
+  Request    -> Consenting [arrowhead=normal, label="consumes", constraint=false]
+  Request    -> Today      [style=dashed, arrowhead=normal, label="one card", constraint=false]
+  Token      -> Desk       [arrowhead=normal, label="opens"]
+  Pass       -> Partner    [arrowhead=normal, label="evidence at delivery"]
+  Delivering -> Pass       [style=dashed, arrowhead=normal, label="yields at delivery", constraint=false]
+  Revoking   -> Grey       [arrowhead=normal, label="affects", constraint=false]
+  Expiring   -> Grey       [arrowhead=normal, label="affects", constraint=false]
+  Adapter    -> Capturing  [arrowhead=odot, style=dashed, label="requires (phase 2)"]
+
+  RulePack   -> Compiling  [arrowhead=odot,   label="requires"]
+  Event      -> EventStore [arrowhead=normal, style=dashed]
+  Pack       -> Evidence   [arrowhead=normal, style=dashed]
+  Consent    -> Wallet     [arrowhead=normal, style=dashed]
+
+  Gemini -> Capturing  [arrowhead=odot, style=dashed, label="requires"]
+  Gemini -> Consenting [arrowhead=odot, style=dashed, label="requires"]
+  ApiRun -> Capturing  [arrowhead=odot, style=dashed]
+  WebRun -> Today      [arrowhead=odot, style=dashed]
+}

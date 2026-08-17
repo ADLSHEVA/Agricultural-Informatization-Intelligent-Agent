@@ -1,0 +1,62 @@
+// OPM SD1.1 — Consenting in-zoomed (Challenge 3 core)
+// Minimizing happens before Binding so the farmer sees a cut field set, not a full dump.
+
+digraph SD1_1 {
+  graph [
+    rankdir=LR
+    fontname="Helvetica"
+    fontsize=16
+    label="SD1.1 — Consenting in-zoomed"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    compound=true
+    nodesep=0.5
+    ranksep=0.7
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=8, color="#222222"]
+
+  Farmer  [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer"]
+  Gemini  [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)\nfarmer locale"]
+  Pack    [shape=box, style="filled", fillcolor="#E3F2FD", label="Share Pack"]
+  Request [shape=box, style="filled", fillcolor="#E3F2FD", label="Partner Request"]
+
+  subgraph cluster_Consenting {
+    label="Consenting"
+    fontsize=14
+    fontname="Helvetica"
+    style="rounded,filled,bold"
+    color="#1565C0"
+    fillcolor="#E3F2FD"
+    penwidth=2
+    margin=18
+
+    Explaining [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Explaining"]
+    Minimizing [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Minimizing"]
+    Binding    [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Binding"]
+    Refusing   [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Refusing"]
+
+    PlainTalk [shape=box, style="filled", fillcolor="#FFFFFF", label="Plain-Language Card\nin farmer locale"]
+    FieldSet  [shape=box, style="filled", fillcolor="#FFFFFF", label="Minimal Field Set"]
+    Consent   [shape=box, style="filled", fillcolor="#E8F5E9", label="Consent"]
+    Bound     [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="purpose-bound"]
+    Refused   [shape=box, style="rounded,filled", fillcolor="#FFE0B2", label="refused"]
+
+    Explaining -> PlainTalk [arrowhead=normal, label="yields"]
+    Minimizing -> FieldSet  [arrowhead=normal, label="yields"]
+    PlainTalk  -> Binding   [arrowhead=odot,   label="requires"]
+    PlainTalk  -> Refusing  [arrowhead=odot,   label="requires"]
+    FieldSet   -> Binding   [arrowhead=odot,   label="requires"]
+    Binding    -> Bound     [arrowhead=normal, label="to"]
+    Refusing   -> Refused   [arrowhead=normal, label="to"]
+    Consent    -> Bound     [style=dashed, arrowhead=none]
+    Consent    -> Refused   [style=dashed, arrowhead=none]
+  }
+
+  Request -> Explaining [arrowhead=normal, label="consumes"]
+  Pack    -> Minimizing [arrowhead=odot,   label="requires"]
+  Gemini  -> Explaining [arrowhead=odot,   label="requires"]
+  Farmer  -> Binding    [arrowhead=dot,    label="handles"]
+  Farmer  -> Refusing   [arrowhead=dot,    label="handles"]
+}

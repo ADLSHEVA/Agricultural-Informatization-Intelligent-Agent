@@ -1,0 +1,9 @@
+{
+  "name": "Origin",
+  "short_name": "Origin",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6efd8",
+  "theme_color": "#e6b000",
+  "description": "Capture once. Share on your terms."
+}

@@ -1,0 +1,320 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
+from origin import agent, capture, consent, deliver, store
+from origin.auth import farmer_only, partner_only, principal
+from origin.compile import compile_event
+from origin.models import (
+    BindBody,
+    ConsentCreateBody,
+    DeskRequestBody,
+    EventConfirmBody,
+    PartnerRequest,
+    Principal,
+)
+from origin.seed import ensure_demo
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    ensure_demo()
+    yield
+
+
+app = FastAPI(title="Origin API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"ok": True}
+
+
+@app.get("/v1/today")
+def today(who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    farm = store.get("farms", who.farm_id)
+    parcels = store.list_where("parcels", farm_id=who.farm_id)
+    open_reqs = store.list_where("requests", farm_id=who.farm_id, status="open")
+    drafts = [c for c in store.list_where("consents", farm_id=who.farm_id) if c.get("state") == "draft"]
+    policies = store.list_where("policies", farm_id=who.farm_id, state="active")
+    return {
+        "farm": farm,
+        "parcels": parcels,
+        "open_request": open_reqs[0] if open_reqs else None,
+        "draft_consent": drafts[0] if drafts else None,
+        "standing_policies": policies,
+        "last_auto": agent.last_auto(who.farm_id),
+    }
+
+
+@app.post("/v1/events")
+async def post_event(
+    parcel_id: str = Form("p3"),
+    note: str = Form(""),
+    audio: UploadFile | None = File(default=None),
+    image: UploadFile | None = File(default=None),
+    who: Principal = Depends(principal),
+) -> dict:
+    farmer_only(who)
+    audio_bytes = await audio.read() if audio is not None else None
+    image_bytes = await image.read() if image is not None else None
+    source = "voice" if audio_bytes else "photo" if image_bytes else "note"
+    event = capture.create_draft(
+        farm_id=who.farm_id,
+        parcel_id=parcel_id,
+        note=note,
+        source=source,
+        audio=audio_bytes or None,
+        image=image_bytes or None,
+        audio_mime=audio.content_type if audio else "audio/webm",
+        image_mime=image.content_type if image else "image/jpeg",
+    )
+    return event.model_dump(mode="json")
+
+
+@app.get("/v1/events/{event_id}")
+def get_event(event_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    row = store.get("events", event_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Event not found"})
+    return row
+
+
+@app.post("/v1/events/{event_id}/confirm")
+def confirm_event(
+    event_id: str, body: EventConfirmBody, who: Principal = Depends(principal)
+) -> dict:
+    farmer_only(who)
+    row = store.get("events", event_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Event not found"})
+    event = capture.confirm(store.as_event(row), **body.model_dump())
+    parcel_row = store.get("parcels", event.parcel_id)
+    if not parcel_row:
+        raise HTTPException(400, {"code": "bad_parcel", "message": "Unknown parcel"})
+    open_reqs = store.list_where("requests", farm_id=who.farm_id, status="open")
+    req_id = open_reqs[0]["id"] if open_reqs else None
+    rule_id = (open_reqs[0].get("rule_id") if open_reqs else None) or agent.DEFAULT_RULE
+    pack = compile_event(event, store.as_parcel(parcel_row), rule_id=rule_id)
+    farm = store.get("farms", who.farm_id) or {}
+    if req_id:
+        req = open_reqs[0]
+        req["status"] = "linked"
+        store.put("requests", req_id, req)
+    result = agent.fulfill_pack(
+        pack=pack,
+        request_id=req_id,
+        locale=farm.get("locale", "en"),
+    )
+    payload = {
+        "event": event.model_dump(mode="json"),
+        "pack": pack.model_dump(mode="json"),
+        "consent": result["consent"].model_dump(mode="json"),
+        "auto": result.get("mode") == "auto",
+        "agent": {k: result.get(k) for k in ("decision", "reason", "policy_id")},
+    }
+    if result.get("mode") == "auto":
+        payload["receipt"] = result["receipt"].model_dump(mode="json")
+    return payload
+
+
+@app.get("/v1/packs")
+def list_packs(who: Principal = Depends(principal)) -> list[dict]:
+    farmer_only(who)
+    return store.list_where("packs", farm_id=who.farm_id)
+
+
+@app.get("/v1/packs/{pack_id}")
+def get_pack(pack_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    row = store.get("packs", pack_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Pack not found"})
+    return row
+
+
+@app.post("/v1/consents")
+def create_consent(body: ConsentCreateBody, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    pack_row = store.get("packs", body.pack_id)
+    if not pack_row or pack_row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Pack not found"})
+    farm = store.get("farms", who.farm_id) or {}
+    draft = consent.open_draft(store.as_pack(pack_row), locale=farm.get("locale", "en"))
+    return draft.model_dump(mode="json")
+
+
+@app.get("/v1/consents/{consent_id}")
+def get_consent(consent_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    row = store.get("consents", consent_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Consent not found"})
+    return store.as_consent(row).model_dump(mode="json")
+
+
+@app.post("/v1/consents/{consent_id}/bind")
+def bind_consent(
+    consent_id: str, body: BindBody | None = None, who: Principal = Depends(principal)
+) -> dict:
+    farmer_only(who)
+    row = store.get("consents", consent_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Consent not found"})
+    bound = consent.bind(store.as_consent(row))
+    token, receipt = deliver.issue(bound)
+    pack = store.get("packs", bound.pack_id)
+    passport = deliver.lot_passport(bound, store.as_pack(pack))
+    policy = agent.activate_standing(bound) if body and body.standing else None
+    return {
+        "consent": bound.model_dump(mode="json"),
+        "token": token.model_dump(mode="json"),
+        "receipt": receipt.model_dump(mode="json"),
+        "passport": passport,
+        "policy": policy.model_dump(mode="json") if policy else None,
+    }
+
+
+@app.post("/v1/consents/{consent_id}/refuse")
+def refuse_consent(consent_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    row = store.get("consents", consent_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Consent not found"})
+    refused, receipt = consent.refuse(store.as_consent(row))
+    return {"consent": refused.model_dump(mode="json"), "receipt": receipt.model_dump(mode="json")}
+
+
+@app.post("/v1/consents/{consent_id}/revoke")
+def revoke_consent(consent_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    row = store.get("consents", consent_id)
+    if not row or row.get("farm_id") != who.farm_id:
+        raise HTTPException(404, {"code": "not_found", "message": "Consent not found"})
+    revoked = consent.revoke(store.as_consent(row))
+    return revoked.model_dump(mode="json")
+
+
+@app.get("/v1/receipts")
+def list_receipts(who: Principal = Depends(principal)) -> list[dict]:
+    farmer_only(who)
+    rows = store.list_where("receipts", farm_id=who.farm_id)
+    rows.sort(key=lambda r: r.get("issued_at", ""), reverse=True)
+    return rows
+
+
+@app.get("/v1/me/export")
+def export_me(who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    farm = store.get("farms", who.farm_id) or {}
+    us = farm.get("country") == "US"
+    return {
+        "kind": "portable_pack",
+        "article": "US farm-data originator portable copy" if us else "GDPR Art. 20",
+        "basis": (
+            ["Ag Data Transparent principles", "farmer as data originator"]
+            if us
+            else ["GDPR Art. 20", "EU Code of Conduct data originator"]
+        ),
+        "farm": farm,
+        "parcels": store.list_where("parcels", farm_id=who.farm_id),
+        "events": store.list_where("events", farm_id=who.farm_id),
+        "packs": store.list_where("packs", farm_id=who.farm_id),
+        "consents": store.list_where("consents", farm_id=who.farm_id),
+        "policies": store.list_where("policies", farm_id=who.farm_id),
+        "receipts": store.list_where("receipts", farm_id=who.farm_id),
+    }
+
+
+@app.delete("/v1/me")
+def erase_me(who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    capture.wipe_evidence(who.farm_id)
+    for ev in store.list_where("events", farm_id=who.farm_id):
+        ev["note"] = ""
+        ev["product_name"] = ""
+        ev["rate"] = None
+        ev["evidence_uris"] = []
+        store.put("events", ev["id"], ev)
+    for c in store.list_where("consents", farm_id=who.farm_id):
+        c["state"] = "erased"
+        c["plain_talk"] = None
+        store.put("consents", c["id"], c)
+        consent._disable_tokens(c["id"])
+        consent._grey_receipts(c["id"])
+    for policy in store.list_where("policies", farm_id=who.farm_id):
+        policy["state"] = "revoked"
+        store.put("policies", policy["id"], policy)
+    return {"ok": True, "code": "erased"}
+
+
+@app.post("/v1/desk/requests")
+def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> dict:
+    partner_only(who)
+    partner_id = who.partner_id or ""
+    req = PartnerRequest(
+        id=f"req-{uuid4().hex[:10]}",
+        farm_id=body.farm_id,
+        partner_id=partner_id,
+        partner_name=agent.partner_display(partner_id),
+        purpose=body.purpose,
+        field_list=["parcel_id", "date", "product_name", "rate", "unit", "buffer_m"],
+        rule_id=agent.default_rule_for(partner_id),
+        status="open",
+        created_at=datetime.now(timezone.utc),
+    )
+    store.put("requests", req.id, req.model_dump(mode="json"))
+    decision = agent.tick_request(req)
+    fresh = store.get("requests", req.id) or req.model_dump(mode="json")
+    return {
+        **fresh,
+        "agent": {k: decision.get(k) for k in ("decision", "reason", "mode", "consent_id", "policy_id")},
+    }
+
+
+@app.get("/v1/desk/packs")
+def desk_packs(who: Principal = Depends(principal)) -> list[dict]:
+    partner_only(who)
+    out = []
+    for c_row in store.list_where("consents", partner_id=who.partner_id):
+        c = store.as_consent(c_row)
+        try:
+            deliver.desk_visible(c)
+        except HTTPException:
+            continue
+        pack = store.get("packs", c.pack_id)
+        out.append({"consent": c.model_dump(mode="json"), "pack": pack, "grey": False})
+    for c_row in store.list_where("consents", partner_id=who.partner_id):
+        c = store.as_consent(c_row)
+        if c.state in {"revoked", "expired", "refused", "erased"}:
+            pack = store.get("packs", c.pack_id) or {}
+            out.append({"consent": c.model_dump(mode="json"), "pack": {"id": pack.get("id"), "fields": {}}, "grey": True})
+    return out
+
+
+@app.get("/v1/desk/packs/{pack_id}")
+def desk_pack(pack_id: str, who: Principal = Depends(principal)) -> dict:
+    partner_only(who)
+    pack = store.get("packs", pack_id)
+    if not pack:
+        raise HTTPException(404, {"code": "not_found", "message": "Pack not found"})
+    matches = [c for c in store.list_where("consents", pack_id=pack_id) if c.get("partner_id") == who.partner_id]
+    if not matches:
+        raise HTTPException(404, {"code": "not_found", "message": "No consent"})
+    c = store.as_consent(matches[0])
+    deliver.desk_visible(c)
+    return {"consent": c.model_dump(mode="json"), "pack": pack, "passport": deliver.lot_passport(c, store.as_pack(pack))}

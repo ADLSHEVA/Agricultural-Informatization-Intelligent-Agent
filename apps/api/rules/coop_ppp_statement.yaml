@@ -1,0 +1,19 @@
+id: coop_ppp_statement_v1
+partner: loire-cereals-coop
+partner_name: Loire Cereals Co-op
+purpose: seasonal_plant_protection_statement
+until: end_of_calendar_year
+reuse: false
+fields:
+  - parcel_id
+  - date
+  - product_name
+  - rate
+  - unit
+  - buffer_m
+  - gaec4_buffer_ok
+exclude:
+  - yield
+  - revenue
+checks:
+  - gaec4_buffer_ok

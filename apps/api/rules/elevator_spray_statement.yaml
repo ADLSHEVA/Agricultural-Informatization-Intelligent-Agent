@@ -1,0 +1,19 @@
+id: elevator_spray_statement_v1
+partner: heartland-grain
+partner_name: Heartland Grain LLC
+purpose: seasonal_spray_statement
+until: end_of_calendar_year
+reuse: false
+fields:
+  - parcel_id
+  - date
+  - product_name
+  - rate
+  - unit
+  - buffer_m
+  - buffer_ok
+exclude:
+  - yield
+  - revenue
+checks:
+  - buffer_ok
