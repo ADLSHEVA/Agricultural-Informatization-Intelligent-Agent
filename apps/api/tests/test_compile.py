@@ -1,11 +1,12 @@
 from origin.compile import compile_event
+from origin.geometry import buffer_ok
 from origin.models import EventRecord, Parcel
 from origin.seed import PARCELS
 from datetime import datetime, timezone
 
 
-def _parcel3() -> Parcel:
-    pid, label, crop, area, ring, buf = next(p for p in PARCELS if p[0] == "p3")
+def _parcel(pid: str) -> Parcel:
+    _, label, crop, area, ring, buf = next(p for p in PARCELS if p[0] == pid)
     return Parcel(
         id=pid,
         farm_id="demo-farm",
@@ -16,6 +17,10 @@ def _parcel3() -> Parcel:
         geom={"type": "Polygon", "coordinates": [ring + [ring[0]]]},
         watercourse_buffer_m=buf,
     )
+
+
+def _parcel3() -> Parcel:
+    return _parcel("p3")
 
 
 def test_compile_excludes_yield(tmp_path, monkeypatch):
@@ -59,3 +64,29 @@ def test_gaec4_fails_without_buffer(tmp_path, monkeypatch):
     )
     pack = compile_event(event, _parcel3())
     assert pack.fields["buffer_ok"] is False
+
+
+def test_shared_corner_is_not_frontage():
+    """p4 starts exactly where the ditch ends, at (220, 80).
+
+    A single shared point is not a bank you can leave a filter strip on, so p4
+    must pass with no buffer claimed. p3, which the ditch runs through, must not.
+    """
+    corner = buffer_ok(_parcel("p4"), 0.0)
+    assert corner["touches_watercourse"] is False
+    assert corner["frontage_m"] < 1.0
+    assert corner["required_m"] == 0.0
+    assert corner["buffer_ok"] is True
+
+    real = buffer_ok(_parcel3(), 0.0)
+    assert real["touches_watercourse"] is True
+    assert real["frontage_m"] > 200
+    assert real["buffer_ok"] is False
+
+
+def test_distant_field_needs_no_buffer():
+    """p1 stops 10 m short of the ditch. Distance is recorded for the audit trail."""
+    away = buffer_ok(_parcel("p1"), 0.0)
+    assert away["touches_watercourse"] is False
+    assert away["distance_m"] == 10.0
+    assert away["buffer_ok"] is True

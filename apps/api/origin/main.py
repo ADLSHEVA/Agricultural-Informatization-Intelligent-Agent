@@ -8,9 +8,10 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from origin import agent, capture, consent, deliver, store
+from origin import agent, capture, consent, deliver, questionnaire, store
 from origin.auth import farmer_only, partner_only, principal
-from origin.compile import compile_event
+from origin.compile import BUFFER_KEYS, compile_event, load_rule
+from origin.config import settings
 from origin.models import (
     BindBody,
     ConsentCreateBody,
@@ -18,6 +19,7 @@ from origin.models import (
     EventConfirmBody,
     PartnerRequest,
     Principal,
+    RuleDraft,
 )
 from origin.seed import ensure_demo
 
@@ -30,7 +32,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="Origin API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings().cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,6 +59,7 @@ def today(who: Principal = Depends(principal)) -> dict:
         "draft_consent": drafts[0] if drafts else None,
         "standing_policies": policies,
         "last_auto": agent.last_auto(who.farm_id),
+        "last_decision": agent.last_decision(who.farm_id),
     }
 
 
@@ -102,15 +105,19 @@ def confirm_event(
     row = store.get("events", event_id)
     if not row or row.get("farm_id") != who.farm_id:
         raise HTTPException(404, {"code": "not_found", "message": "Event not found"})
-    event = capture.confirm(store.as_event(row), **body.model_dump())
+    # exclude_unset: only the fields the farmer actually edited. Sending the
+    # whole model would arrive as a wall of nulls and blank the untouched ones.
+    event = capture.confirm(store.as_event(row), **body.model_dump(exclude_unset=True))
     parcel_row = store.get("parcels", event.parcel_id)
     if not parcel_row:
         raise HTTPException(400, {"code": "bad_parcel", "message": "Unknown parcel"})
+    farm = store.get("farms", who.farm_id) or {}
     open_reqs = store.list_where("requests", farm_id=who.farm_id, status="open")
     req_id = open_reqs[0]["id"] if open_reqs else None
-    rule_id = (open_reqs[0].get("rule_id") if open_reqs else None) or agent.DEFAULT_RULE
+    # No open request means no partner asked, so the pack follows the farm's
+    # market — a US default here would hand an EU farm the elevator pack.
+    rule_id = (open_reqs[0].get("rule_id") if open_reqs else None) or agent.default_rule_for_farm(farm)
     pack = compile_event(event, store.as_parcel(parcel_row), rule_id=rule_id)
-    farm = store.get("farms", who.farm_id) or {}
     if req_id:
         req = open_reqs[0]
         req["status"] = "linked"
@@ -125,7 +132,10 @@ def confirm_event(
         "pack": pack.model_dump(mode="json"),
         "consent": result["consent"].model_dump(mode="json"),
         "auto": result.get("mode") == "auto",
-        "agent": {k: result.get(k) for k in ("decision", "reason", "policy_id")},
+        "agent": {
+            k: result.get(k)
+            for k in ("decision", "reason", "reason_code", "extra_fields", "note", "policy_id")
+        },
     }
     if result.get("mode") == "auto":
         payload["receipt"] = result["receipt"].model_dump(mode="json")
@@ -153,8 +163,24 @@ def create_consent(body: ConsentCreateBody, who: Principal = Depends(principal))
     pack_row = store.get("packs", body.pack_id)
     if not pack_row or pack_row.get("farm_id") != who.farm_id:
         raise HTTPException(404, {"code": "not_found", "message": "Pack not found"})
+    pack = store.as_pack(pack_row)
+    # The pack decides partner and purpose. If the caller stated either, it must
+    # agree: a consent card that says something other than what the client
+    # showed the farmer is exactly the confusion Origin exists to remove.
+    for name, claimed, actual in (
+        ("partner_id", body.partner_id, pack.partner_id),
+        ("purpose", body.purpose, pack.purpose),
+    ):
+        if claimed is not None and claimed != actual:
+            raise HTTPException(
+                409,
+                {
+                    "code": "pack_mismatch",
+                    "message": f"Pack {pack.id} has {name} {actual!r}, not {claimed!r}",
+                },
+            )
     farm = store.get("farms", who.farm_id) or {}
-    draft = consent.open_draft(store.as_pack(pack_row), locale=farm.get("locale", "en"))
+    draft = consent.open_draft(pack, locale=farm.get("locale", "en"))
     return draft.model_dump(mode="json")
 
 
@@ -266,14 +292,17 @@ def erase_me(who: Principal = Depends(principal)) -> dict:
 def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> dict:
     partner_only(who)
     partner_id = who.partner_id or ""
+    farm = store.get("farms", body.farm_id) or {}
+    rule_id = agent.default_rule_for(partner_id, farm)
+    rule = load_rule(rule_id)
     req = PartnerRequest(
         id=f"req-{uuid4().hex[:10]}",
         farm_id=body.farm_id,
         partner_id=partner_id,
         partner_name=agent.partner_display(partner_id),
-        purpose=body.purpose,
-        field_list=["parcel_id", "date", "product_name", "rate", "unit", "buffer_m"],
-        rule_id=agent.default_rule_for(partner_id),
+        purpose=body.purpose or rule["purpose"],
+        field_list=[f for f in rule["fields"] if f not in BUFFER_KEYS],
+        rule_id=rule_id,
         status="open",
         created_at=datetime.now(timezone.utc),
     )
@@ -282,8 +311,78 @@ def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> 
     fresh = store.get("requests", req.id) or req.model_dump(mode="json")
     return {
         **fresh,
-        "agent": {k: decision.get(k) for k in ("decision", "reason", "mode", "consent_id", "policy_id")},
+        "agent": {
+            k: decision.get(k)
+            for k in (
+                "decision",
+                "reason",
+                "reason_code",
+                "extra_fields",
+                "note",
+                "mode",
+                "consent_id",
+                "policy_id",
+            )
+        },
     }
+
+
+def _rule_draft_out(draft: RuleDraft | dict) -> dict:
+    """Wire the stored field names to the API names the farmer UI will read.
+
+    The store keeps `dropped_refused` / `dropped_unknown` (what the sanitiser
+    actually did). The contract also exposes `refused_fields` / `unknown_fields`
+    so the D6 assertion — yield and revenue do not survive — is visible without
+    knowing the internal names.
+    """
+    data = draft.model_dump(mode="json") if isinstance(draft, RuleDraft) else dict(draft)
+    data["refused_fields"] = list(data.get("dropped_refused") or [])
+    data["unknown_fields"] = list(data.get("dropped_unknown") or [])
+    return data
+
+
+@app.post("/v1/desk/questionnaires")
+async def desk_questionnaire(
+    farm_id: str = Form(...),
+    text: str = Form(""),
+    document: UploadFile | None = File(default=None),
+    who: Principal = Depends(principal),
+) -> dict:
+    partner_only(who)
+    farm = store.get("farms", farm_id)
+    if not farm:
+        raise HTTPException(404, {"code": "not_found", "message": "Farm not found"})
+    market = "US" if str(farm.get("country") or "").upper() == "US" else "EU"
+    doc_bytes = await document.read() if document is not None else None
+    mime = document.content_type if document is not None else "application/pdf"
+    draft = questionnaire.propose(
+        farm_id=farm_id,
+        partner_id=who.partner_id or "",
+        market=market,
+        text=text,
+        document=doc_bytes or None,
+        document_mime=mime or "application/pdf",
+        partner_hint=agent.partner_display(who.partner_id or ""),
+    )
+    return _rule_draft_out(draft)
+
+
+@app.get("/v1/rule-drafts")
+def list_rule_drafts(who: Principal = Depends(principal)) -> list[dict]:
+    farmer_only(who)
+    return [_rule_draft_out(row) for row in questionnaire.list_for(who.farm_id)]
+
+
+@app.post("/v1/rule-drafts/{draft_id}/approve")
+def approve_rule_draft(draft_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    return _rule_draft_out(questionnaire.decide(draft_id, who.farm_id, approve=True))
+
+
+@app.post("/v1/rule-drafts/{draft_id}/reject")
+def reject_rule_draft(draft_id: str, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    return _rule_draft_out(questionnaire.decide(draft_id, who.farm_id, approve=False))
 
 
 @app.get("/v1/desk/packs")

@@ -35,6 +35,9 @@ def _empty() -> dict[str, Any]:
         "policies": {},
         "agent_log": {},
         "evidence": {},
+        "rule_drafts": {},
+        "rule_packs": {},
+        "terms_reviews": {},
     }
 
 

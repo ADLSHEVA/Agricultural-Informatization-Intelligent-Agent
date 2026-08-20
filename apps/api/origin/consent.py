@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -11,19 +12,42 @@ from origin.gemini_router import explain_consent
 from origin.models import ConsentRecord, PackRecord, PlainTalk, ReceiptRecord
 
 
-def year_end() -> date:
-    today = date.today()
+def year_end(today: date | None = None) -> date:
+    today = today or date.today()
     return date(today.year, 12, 31)
+
+
+def until_from_rule(rule: dict, today: date | None = None) -> date:
+    """Read the expiry the rule pack asked for.
+
+    Accepts ``end_of_calendar_year``, ``+90d``, or an ISO date. Anything we do
+    not recognise falls back to year end rather than granting a longer window —
+    a rule pack typo must never widen a consent.
+    """
+    today = today or date.today()
+    raw = str(rule.get("until") or "").strip()
+    if not raw or raw == "end_of_calendar_year":
+        return year_end(today)
+    days = re.fullmatch(r"\+(\d+)d", raw)
+    if days:
+        return today + timedelta(days=int(days.group(1)))
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return year_end(today)
 
 
 def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> ConsentRecord:
     rule = load_rule(pack.rule_id)
+    partner_name = rule.get("partner_name", pack.partner_id)
+    reuse = bool(rule.get("reuse", False))
+    until = until_from_rule(rule)
     talk = explain_consent(
-        partner_name=rule.get("partner_name", pack.partner_id),
+        partner_name=partner_name,
         purpose=pack.purpose,
         fields=pack.fields,
-        until=year_end().isoformat(),
-        reuse=bool(rule.get("reuse", False)),
+        until=until.isoformat(),
+        reuse=reuse,
         locale=locale,
     )
     consent = ConsentRecord(
@@ -31,11 +55,11 @@ def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> 
         farm_id=pack.farm_id,
         pack_id=pack.id,
         partner_id=pack.partner_id,
-        partner_name=rule.get("partner_name", pack.partner_id),
+        partner_name=partner_name,
         purpose=pack.purpose,
         fields=list(pack.fields.keys()),
-        until=year_end(),
-        reuse=bool(rule.get("reuse", False)),
+        until=until,
+        reuse=reuse,
         state="draft",
         locale=locale,
         plain_talk=talk,

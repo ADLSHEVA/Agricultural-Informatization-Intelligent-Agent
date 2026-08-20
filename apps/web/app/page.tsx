@@ -17,7 +17,16 @@ export default function TodayPage() {
   const request = data?.open_request;
   const draft = data?.draft_consent;
   const lastAuto = data?.last_auto;
+  const lastDecision = data?.last_decision;
   const farmName = data?.farm?.display_name ?? "Riverside Farms";
+
+  // The agent narrates in the farmer's own language, so prefer its note over
+  // any English written into this file. Falls back when Vertex is unreachable.
+  const askNote =
+    lastDecision?.decision === "ask_farmer" && lastDecision?.consent_id === draft?.id
+      ? lastDecision
+      : null;
+  const overAsk: string[] = askNote?.extra_fields ?? [];
 
   return (
     <>
@@ -28,10 +37,10 @@ export default function TodayPage() {
         <section className="card">
           <h2>Origin already sent it</h2>
           <p>
-            Standing permission covered this request. The elevator got the spray statement — not your yield.
-            Revoke on Who if that was wrong.
+            {lastAuto.note ??
+              "Standing permission covered this request. The elevator got the spray statement — not your yield."}
           </p>
-          <p className="muted">{lastAuto.reason}</p>
+          <p className="muted">Revoke on Who if that was wrong. {lastAuto.reason}</p>
         </section>
       )}
 
@@ -46,7 +55,12 @@ export default function TodayPage() {
       {draft && (
         <section className="card">
           <h2>Review before they see anything</h2>
-          <p>{draft.partner_name} is waiting on your yes or no. Origin will not send this on its own.</p>
+          <p>{askNote?.note ?? `${draft.partner_name} is waiting on your yes or no. Origin will not send this on its own.`}</p>
+          {overAsk.length > 0 && (
+            <p className="bad">
+              They now also want {overAsk.join(", ")} — never in your box, so Origin sent nothing.
+            </p>
+          )}
           <BigButton onClick={() => router.push(`/consent/${draft.id}`)}>Open consent</BigButton>
         </section>
       )}

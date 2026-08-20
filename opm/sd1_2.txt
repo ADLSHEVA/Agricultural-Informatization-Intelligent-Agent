@@ -1,0 +1,107 @@
+// OPM SD1.2 — Deciding in-zoomed (the Origin Agent)
+// The farmer draws a box at Consenting; Deciding may only act inside it.
+// Narration is generated *after* the decision exists and cannot change it —
+// this is decision D6 (read and phrase; a rule pack or a human must approve) drawn rather than asserted.
+
+digraph SD1_2 {
+  graph [
+    rankdir=TB
+    fontname="Helvetica"
+    fontsize=16
+    label="SD1.2 — Deciding in-zoomed\nRules approve and execute · the model only phrases the result"
+    labelloc=t
+    pad=0.4
+    bgcolor="white"
+    compound=true
+    nodesep=0.4
+    ranksep=0.5
+    splines=true
+    newrank=true
+  ]
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=8, color="#222222"]
+
+  Farmer   [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer"]
+  Partner  [shape=box, style="filled", fillcolor="#FFF8E1", label="Value Chain Partner"]
+  Standing [shape=box, style="filled,bold", fillcolor="#FFFFFF", penwidth=1.6, label="Standing Permission\npartner + purpose\n+ allowed fields + until"]
+  Gemini   [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Vertex AI Gemini\n(environmental)\nnarration only"]
+
+  { rank=same; Farmer; Partner; Standing; Gemini }
+
+  Request [shape=box, style="filled", fillcolor="#FFF8E1", label="Partner Request\npurpose + field list"]
+  Pack    [shape=box, style="filled", fillcolor="#E3F2FD", label="Share Pack\ncompiled fields"]
+
+  { rank=same; Request; Pack }
+
+  subgraph cluster_Deciding {
+    label="Deciding"
+    fontsize=14
+    fontname="Helvetica"
+    style="rounded,filled,bold"
+    color="#AD1457"
+    fillcolor="#FCE4EC"
+    penwidth=2
+    margin=20
+
+    Matching   [shape=ellipse, style="filled,bold", fillcolor="#F8BBD0", penwidth=2, label="Matching\nsame purpose · before until\nset(pack.fields) ⊆ set(allowed_fields)"]
+    Diagnosing [shape=ellipse, style="filled", fillcolor="#F8BBD0", label="Diagnosing\nwhy it cannot act\n(pure code)"]
+    Narrating  [shape=ellipse, style="filled,dashed", fillcolor="#F8BBD0", label="Narrating\nfarmer locale\nEN / FR template on failure"]
+    Logging    [shape=ellipse, style="filled", fillcolor="#F8BBD0", label="Logging"]
+
+    AutoDeliver [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="auto_deliver\ninside the box"]
+    AskFarmer   [shape=box, style="rounded,filled", fillcolor="#FFE0B2", label="ask_farmer"]
+    NeedCapture [shape=box, style="rounded,filled", fillcolor="#E0E0E0", label="need_capture\nno confirmed fact yet"]
+
+    Reason [shape=box, style="filled", fillcolor="#FFFFFF", label="Reason code\nnew_partner · new_purpose\nextra_fields · expired_policy"]
+    Extra  [shape=box, style="filled", fillcolor="#FFFFFF", label="Extra fields\nwanted but never allowed"]
+    Note   [shape=box, style="filled", fillcolor="#FFFFFF", label="Plain-talk note"]
+    Log    [shape=box, style="filled,bold", fillcolor="#FFFFFF", penwidth=1.6, label="agent_log entry\ndecision · reason · extra · note"]
+
+    { rank=same; Matching; Diagnosing }
+    { rank=same; AutoDeliver; AskFarmer; NeedCapture }
+    { rank=same; Reason; Extra }
+    { rank=same; Narrating; Note }
+
+    Matching -> AutoDeliver [style=dotted, arrowhead=normal, label="to"]
+    Matching -> AskFarmer   [style=dotted, arrowhead=normal, label="to"]
+    Matching -> NeedCapture [style=dotted, arrowhead=normal, label="to"]
+
+    AskFarmer   -> Diagnosing [arrowhead=normal, label="consumes"]
+    NeedCapture -> Diagnosing [arrowhead=normal, label="consumes"]
+    Diagnosing  -> Reason     [arrowhead=normal, label="yields"]
+    Diagnosing  -> Extra      [arrowhead=normal, label="yields"]
+
+    // The decision is already fixed by the time Narrating runs. Its only input
+    // is the verdict; its only output is a sentence.
+    AutoDeliver -> Narrating [arrowhead=normal, label="verdict, already final"]
+    Reason      -> Narrating [arrowhead=normal, label="consumes"]
+    Extra       -> Narrating [arrowhead=normal, label="consumes"]
+    Narrating   -> Note      [arrowhead=normal, label="yields"]
+
+    Note        -> Logging [arrowhead=normal, label="consumes"]
+    AutoDeliver -> Logging [arrowhead=normal, style=dashed]
+    AskFarmer   -> Logging [arrowhead=normal, style=dashed]
+    NeedCapture -> Logging [arrowhead=normal, style=dashed]
+    Logging     -> Log     [arrowhead=normal, label="yields"]
+  }
+
+  Delivering [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Delivering\ntoken + receipt"]
+  Consenting [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Consenting\ndraft card for the farmer"]
+  Capturing  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Capturing"]
+  Today      [shape=box,     style="filled", fillcolor="#FFFDE7", label="Today\none card"]
+
+  { rank=same; Delivering; Consenting; Capturing }
+
+  Partner  -> Request  [arrowhead=normal, label="yields"]
+  Request  -> Matching [arrowhead=normal, label="consumes"]
+  Pack     -> Matching [arrowhead=odot,   label="requires"]
+  Standing -> Matching [arrowhead=odot,   label="requires"]
+  Farmer   -> Standing [arrowhead=dot,    label="draws the box · pauses · revokes"]
+  Gemini   -> Narrating [arrowhead=odot,  label="requires"]
+
+  AutoDeliver -> Delivering [arrowhead=normal, label="triggers"]
+  AskFarmer   -> Consenting [arrowhead=normal, label="triggers"]
+  NeedCapture -> Capturing  [arrowhead=normal, label="asks for a fact first"]
+  Log         -> Today      [style=dashed, arrowhead=normal, label="last decision, in the farmer's words"]
+  Consenting  -> Today      [style=dashed, arrowhead=normal, label="one card"]
+}

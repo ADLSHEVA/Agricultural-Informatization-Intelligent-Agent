@@ -10,6 +10,13 @@ from origin.models import Parcel
 WATERCOURSE = LineString([(0, 80), (220, 80)])
 REQUIRED_BUFFER_M = 5.0
 
+# A field "meets" the ditch only if it shares real frontage with it. Tolerance
+# absorbs sketch imprecision; the minimum length stops a single corner point
+# from counting — field 4 starts exactly where the ditch ends, and a shared
+# corner is not a bank you can leave a filter strip on.
+TOUCH_TOL_M = 0.5
+MIN_FRONTAGE_M = 1.0
+
 
 def parcel_polygon(parcel: Parcel):
     return shape(parcel.geom)
@@ -23,8 +30,10 @@ def buffer_ok(parcel: Parcel, claimed_buffer_m: float | None) -> dict:
     """
     poly = parcel_polygon(parcel)
     distance = poly.distance(WATERCOURSE)
-    touches = distance < 1e-6 or poly.intersects(WATERCOURSE.buffer(0.5))
-    required = parcel.watercourse_buffer_m or (REQUIRED_BUFFER_M if touches else 0.0)
+    frontage = poly.buffer(TOUCH_TOL_M).intersection(WATERCOURSE).length
+    touches = frontage >= MIN_FRONTAGE_M
+    recorded = parcel.watercourse_buffer_m
+    required = recorded if recorded > 0 else (REQUIRED_BUFFER_M if touches else 0.0)
     claimed = claimed_buffer_m if claimed_buffer_m is not None else 0.0
     ok = (not touches) or claimed >= required
     return {
@@ -34,6 +43,7 @@ def buffer_ok(parcel: Parcel, claimed_buffer_m: float | None) -> dict:
         "required_m": required,
         "claimed_m": claimed,
         "distance_m": round(float(distance), 2),
+        "frontage_m": round(float(frontage), 2),
     }
 
 

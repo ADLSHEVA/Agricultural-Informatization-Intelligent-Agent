@@ -18,7 +18,7 @@ digraph SD1_1 {
   edge [fontname="Helvetica", fontsize=8, color="#222222"]
 
   Farmer  [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer"]
-  Gemini  [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)\nfarmer locale"]
+  Gemini  [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Vertex AI Gemini\n(environmental)\nfarmer locale"]
   Pack    [shape=box, style="filled", fillcolor="#E3F2FD", label="Share Pack"]
   Request [shape=box, style="filled", fillcolor="#E3F2FD", label="Partner Request"]
 

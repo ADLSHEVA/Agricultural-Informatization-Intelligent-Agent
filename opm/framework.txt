@@ -113,7 +113,7 @@ digraph FRAMEWORK {
 
     EventStore [shape=box, style="filled", fillcolor="#FFFFFF", label="Event Store"]
     Evidence   [shape=box, style="filled", fillcolor="#FFFFFF", label="Evidence Store\nphotos / share packs"]
-    RulePack   [shape=box, style="filled", fillcolor="#FFFFFF", label="Rule Pack (YAML)\nGAEC / questionnaire / minimise"]
+    RulePack   [shape=box, style="filled", fillcolor="#FFFFFF", label="Rule Pack (YAML)\nmarket: US | EU\nGAEC / questionnaire / minimise\napproved drafts join it as data"]
     Wallet     [shape=box, style="filled", fillcolor="#FFFFFF", label="Consent Wallet\ndraft → bound | refused\nbound → expired / revoked"]
     Adapter    [shape=box, style="filled", fillcolor="#FFFFFF", label="Import Adapter\nISOXML / LPIS sketch"]
 
@@ -121,7 +121,7 @@ digraph FRAMEWORK {
   }
 
   subgraph cluster_gcp {
-    label="Google Cloud  ·  europe-west1  ·  two Cloud Run services  ·  min=0"
+    label="Google Cloud  ·  services europe-west1  ·  two Cloud Run services  ·  min=0"
     fontname="Helvetica"
     fontsize=13
     style="rounded,filled"
@@ -135,11 +135,13 @@ digraph FRAMEWORK {
     Fire   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firestore\nevents · packs · consents"]
     Gcs    [shape=box, style="filled", fillcolor="#FFFFFF", label="Cloud Storage\nevidence · photos\n30-day lifecycle"]
     Auth   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firebase Auth\nJWT verify"]
-    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Gemini Flash-Lite\nextract + consent in farmer locale\n(environmental · no Pro)\ncontext cache · daily quota · billing cap\nkey only on origin-api"]
+    Adc    [shape=box, style="filled", fillcolor="#FFFFFF", label="ADC / Service Account\nroles/aiplatform.user\nno API key anywhere"]
+    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Vertex AI Gemini\ngemini-3.7-flash · Flash tier only, never Pro\nreads and phrases · never decides\ninference location: global (europe-west1 optional)\ndaily call cap · billing budget"]
 
-    { rank=same; WebRun; ApiRun; Fire; Gcs; Auth; Gemini }
+    { rank=same; WebRun; ApiRun; Fire; Gcs; Auth; Adc; Gemini }
     WebRun -> ApiRun [arrowhead=normal, label="HTTPS + JWT\nOpenAPI"]
     Auth -> ApiRun   [arrowhead=odot, style=dashed, label="requires"]
+    Adc  -> Gemini   [arrowhead=odot, style=dashed, label="authenticates"]
   }
 
   subgraph cluster_desk {
@@ -159,6 +161,69 @@ digraph FRAMEWORK {
     Grey       [shape=box, style="filled", fillcolor="#FFFFFF", label="File greys out\non revoke / expiry"]
 
     { rank=same; Requesting; Request; Desk; Pass; Grey }
+  }
+
+  subgraph cluster_agent {
+    label="Origin Agent — acts only inside the box the farmer drew"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#AD1457"
+    fillcolor="#FCE4EC"
+    penwidth=1.6
+    margin=14
+
+    Deciding  [shape=ellipse, style="filled,bold", fillcolor="#F8BBD0", penwidth=2, label="Deciding\nstrict field containment\nsame purpose · before until"]
+    Narrating [shape=ellipse, style="filled,dashed", fillcolor="#F8BBD0", label="Narrating\nafter the decision, never before"]
+
+    Standing  [shape=box, style="filled,bold", fillcolor="#FFFFFF", penwidth=1.6, label="Standing Permission\npartner + purpose + allowed fields + until"]
+    AgentLog  [shape=box, style="filled", fillcolor="#FFFFFF", label="agent_log\ndecision · reason · note"]
+
+    AutoDeliver [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="auto_deliver"]
+    AskFarmer   [shape=box, style="rounded,filled", fillcolor="#FFE0B2", label="ask_farmer\n(new partner / new purpose / extra fields)"]
+    NeedCapture [shape=box, style="rounded,filled", fillcolor="#E0E0E0", label="need_capture"]
+
+    { rank=same; Deciding; Narrating }
+    { rank=same; AutoDeliver; AskFarmer; NeedCapture }
+
+    Standing  -> Deciding    [arrowhead=odot,   label="requires"]
+    Deciding  -> AgentLog    [arrowhead=normal, label="yields"]
+    Deciding  -> AutoDeliver [style=dotted, arrowhead=normal, label="to"]
+    Deciding  -> AskFarmer   [style=dotted, arrowhead=normal, label="to"]
+    Deciding  -> NeedCapture [style=dotted, arrowhead=normal, label="to"]
+    Deciding  -> Narrating   [arrowhead=normal, label="invokes after", constraint=false]
+    Narrating -> AgentLog    [arrowhead=normal, style=dashed, label="adds note"]
+  }
+
+  subgraph cluster_author {
+    label="Rule authoring and terms review — the model drafts, the farmer approves"
+    fontname="Helvetica"
+    fontsize=13
+    style="rounded,filled"
+    color="#4527A0"
+    fillcolor="#EDE7F6"
+    penwidth=1.6
+    margin=14
+
+    Authoring  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Authoring\nquestionnaire → proposal"]
+    Sanitizing [shape=ellipse, style="filled,bold", fillcolor="#D1C4E9", penwidth=2, label="Sanitizing\ndrops yield + revenue\nunconditionally"]
+    Approving  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Approving\nproposed → approved | rejected"]
+    Digesting  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Digesting\npartner data terms"]
+
+    Quest [shape=box, style="filled", fillcolor="#FFFFFF", label="Partner Questionnaire\ntext / PDF / photo"]
+    Draft [shape=box, style="filled", fillcolor="#FFFFFF", label="Rule Pack Draft\nrefused + unknown fields recorded"]
+    Terms [shape=box, style="filled", fillcolor="#FFFFFF", label="Partner Data Terms"]
+    Risk  [shape=box, style="filled", fillcolor="#FFFFFF", label="Plain-talk Risk Card\nresale · aggregation · retention\nover-ask computed in code"]
+
+    { rank=same; Authoring; Sanitizing; Approving; Digesting }
+    { rank=same; Quest; Draft; Terms; Risk }
+
+    Quest      -> Authoring  [arrowhead=normal, label="consumes"]
+    Authoring  -> Sanitizing [arrowhead=normal, label="proposal"]
+    Sanitizing -> Draft      [arrowhead=normal, label="yields"]
+    Draft      -> Approving  [arrowhead=normal, label="consumes"]
+    Terms      -> Digesting  [arrowhead=normal, label="consumes"]
+    Digesting  -> Risk       [arrowhead=normal, label="yields"]
   }
 
   Farmer -> Today      [arrowhead=dot,    label="handles"]
@@ -188,6 +253,30 @@ digraph FRAMEWORK {
 
   Gemini -> Capturing  [arrowhead=odot, style=dashed, label="requires"]
   Gemini -> Consenting [arrowhead=odot, style=dashed, label="requires"]
+  Gemini -> Narrating  [arrowhead=odot, style=dashed, label="requires"]
+  Gemini -> Authoring  [arrowhead=odot, style=dashed, label="requires"]
+  Gemini -> Digesting  [arrowhead=odot, style=dashed, label="requires"]
   ApiRun -> Capturing  [arrowhead=odot, style=dashed]
   WebRun -> Today      [arrowhead=odot, style=dashed]
+
+  // Agent layer. The farmer draws the box at Consenting; the agent may only act
+  // inside it, and every outcome is logged whether or not anything was sent.
+  Consenting  -> Standing    [arrowhead=normal, style=dashed, label="yields on\n\"next time do this\"", constraint=false]
+  Request     -> Deciding    [arrowhead=normal, label="consumes", constraint=false]
+  Pack        -> Deciding    [arrowhead=odot,   label="requires", constraint=false]
+  AutoDeliver -> Delivering  [arrowhead=normal, label="triggers", constraint=false]
+  AskFarmer   -> Today       [style=dashed, arrowhead=normal, label="one card", constraint=false]
+  NeedCapture -> Speak       [style=dashed, arrowhead=normal, label="record first", constraint=false]
+  Who         -> Standing    [arrowhead=dot,    label="pauses / revokes", constraint=false]
+  AgentLog    -> Today       [style=dashed, arrowhead=normal, label="last decision", constraint=false]
+
+  // Rule authoring and terms review. Approval is the only route into Rule Pack,
+  // and the over-ask diff is measured against the standing permission, in code.
+  Partner  -> Authoring [arrowhead=dot,    label="handles"]
+  Partner  -> Quest     [arrowhead=normal, style=dashed, label="submits", constraint=false]
+  Farmer   -> Approving [arrowhead=dot,    label="handles"]
+  Farmer   -> Digesting [arrowhead=dot,    label="handles"]
+  Approving -> RulePack [arrowhead=normal, label="yields (approved only)", constraint=false]
+  Standing  -> Digesting [arrowhead=odot,  label="requires (over-ask diff)", constraint=false]
+  Risk      -> Who       [style=dashed, arrowhead=normal, label="read from Who has it", constraint=false]
 }

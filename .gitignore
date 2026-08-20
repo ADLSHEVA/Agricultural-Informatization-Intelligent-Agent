@@ -10,6 +10,11 @@ apps/web/tsconfig.tsbuildinfo
 .env
 .env.local
 
-# local product planning — do not publish
-Origin-产品前期规划-Q&A.txt
+# local working notes — not published
+description_proj.txt
+*.zh.md
+Origin-*.txt
+docs/*
+!docs/decisions.md
+!docs/frontend-backend.md
 

@@ -29,9 +29,10 @@ digraph SD {
   SharePack         [shape=box, style="filled", fillcolor="#E8F5E9", label="Share Pack"]
   Consent           [shape=box, style="filled", fillcolor="#E8F5E9", label="Consent"]
   Receipt           [shape=box, style="filled", fillcolor="#E8F5E9", label="Share Receipt"]
+  AgentLog          [shape=box, style="filled", fillcolor="#FCE4EC", label="Decision Log\nwhat the agent did, and why"]
 
   { rank=same; Farmer; ValueChainPartner; OriginSystem }
-  { rank=same; SharePack; Consent; Receipt }
+  { rank=same; SharePack; Consent; Receipt; AgentLog }
 
   Farmer            -> Sharing [arrowhead=dot,  label="handles"]
   ValueChainPartner -> Sharing [arrowhead=odot, label="requires"]
@@ -41,4 +42,5 @@ digraph SD {
   Sharing -> SharePack [arrowhead=normal, label="yields"]
   Sharing -> Consent   [arrowhead=normal, label="yields"]
   Sharing -> Receipt   [arrowhead=normal, label="yields"]
+  Sharing -> AgentLog  [arrowhead=normal, label="yields"]
 }

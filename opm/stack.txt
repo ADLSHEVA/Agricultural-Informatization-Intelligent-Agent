@@ -53,18 +53,22 @@ digraph STACK {
     penwidth=2
     margin=16
 
-    CapMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="capture.py\nFlash-Lite extract"]
+    CapMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="capture.py\nVertex extract → draft"]
     CmpMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="compile.py\nYAML · no LLM"]
     CnsMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="consent.py\nexplain + bind + refuse + revoke"]
     DelMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="deliver.py\ntoken + receipt"]
     GeoMod  [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="geometry.py\nGAEC 4 shapely"]
+    AgtMod  [shape=ellipse, style="filled,bold", fillcolor="#F8BBD0", penwidth=2, label="agent.py\nstanding policy match\ndecision first, narration after"]
+    QstMod  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="questionnaire.py\nsanitize_draft()\ndrops yield + revenue"]
+    TrmMod  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="terms.py\nrisk card · over-ask in code"]
 
     CapMod -> CmpMod -> CnsMod -> DelMod [style=invis, weight=20]
     { rank=same; CapMod; CmpMod; CnsMod; GeoMod; DelMod }
+    { rank=same; AgtMod; QstMod; TrmMod }
   }
 
   subgraph cluster_gcp {
-    label="Google Cloud  ·  europe-west1"
+    label="Google Cloud  ·  services europe-west1  ·  Vertex inference global (europe-west1 optional)"
     fontname="Helvetica"
     fontsize=13
     style="rounded,filled"
@@ -76,10 +80,10 @@ digraph STACK {
     Auth   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firebase Auth"]
     Fire   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firestore"]
     Gcs    [shape=box, style="filled", fillcolor="#FFFFFF", label="Cloud Storage"]
-    Secret [shape=box, style="filled", fillcolor="#FFFFFF", label="Secret Manager"]
-    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Vertex Gemini Flash-Lite\nfarmer locale · cache · quota · cap"]
+    Adc    [shape=box, style="filled,bold", fillcolor="#FFFFFF", penwidth=1.6, label="ADC / Service Account\nroles/aiplatform.user\nno API keys — org policy"]
+    Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Vertex AI Gemini\ngemini-3.7-flash · Flash tier only\ndaily call cap · billing budget"]
 
-    { rank=same; Auth; Fire; Gcs; Secret; Gemini }
+    { rank=same; Auth; Fire; Gcs; Adc; Gemini }
   }
 
   Farmer  -> Today   [arrowhead=dot,  label="handles"]
@@ -88,19 +92,34 @@ digraph STACK {
   Capture  -> CapMod [arrowhead=normal, label="POST /v1/events"]
   Consent  -> CnsMod [arrowhead=normal, label="POST /v1/consents"]
   Receipts -> CnsMod [arrowhead=normal, label="revoke"]
+  Receipts -> TrmMod [arrowhead=normal, label="POST /v1/terms/review"]
+  Receipts -> QstMod [arrowhead=normal, label="GET /v1/rule-drafts\napprove / reject"]
   Desk     -> DelMod [arrowhead=normal, label="GET /v1/desk/packs"]
+  Desk     -> AgtMod [arrowhead=normal, label="POST /v1/desk/requests"]
+  Desk     -> QstMod [arrowhead=normal, label="POST /v1/desk/questionnaires"]
 
   CapMod -> CmpMod [arrowhead=normal]
   CmpMod -> CnsMod [arrowhead=normal]
   CnsMod -> DelMod [arrowhead=normal]
   GeoMod -> CmpMod [arrowhead=odot, label="requires"]
+  AgtMod -> CmpMod [arrowhead=odot, label="requires"]
+  AgtMod -> CnsMod [arrowhead=normal, label="opens draft or"]
+  AgtMod -> DelMod [arrowhead=normal, label="auto_deliver"]
+  QstMod -> CmpMod [arrowhead=normal, style=dashed, label="approved pack"]
+  TrmMod -> AgtMod [arrowhead=odot, style=dashed, label="reads standing policy"]
 
   Gemini -> CapMod [arrowhead=odot, style=dashed]
   Gemini -> CnsMod [arrowhead=odot, style=dashed]
-  Secret -> Gemini [style=dashed, arrowhead=none]
+  Gemini -> AgtMod [arrowhead=odot, style=dashed, label="narration only,\nafter the decision"]
+  Gemini -> QstMod [arrowhead=odot, style=dashed]
+  Gemini -> TrmMod [arrowhead=odot, style=dashed]
+  Adc    -> Gemini [style=dashed, arrowhead=odot, label="authenticates"]
   CapMod -> Fire   [style=dashed, arrowhead=normal]
   CapMod -> Gcs    [style=dashed, arrowhead=normal]
   CmpMod -> Fire   [style=dashed, arrowhead=normal]
   CnsMod -> Fire   [style=dashed, arrowhead=normal]
   DelMod -> Fire   [style=dashed, arrowhead=normal]
+  AgtMod -> Fire   [style=dashed, arrowhead=normal, label="agent_log"]
+  QstMod -> Fire   [style=dashed, arrowhead=normal, label="rule_drafts · rule_packs"]
+  TrmMod -> Fire   [style=dashed, arrowhead=normal, label="terms_reviews"]
 }

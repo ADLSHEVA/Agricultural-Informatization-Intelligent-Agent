@@ -21,7 +21,7 @@ digraph SD1 {
   edge [fontname="Helvetica", fontsize=8, color="#222222"]
 
   Farmer   [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer"]
-  Gemini   [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)\nplain talk in farmer locale"]
+  Gemini   [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Vertex AI Gemini\n(environmental)\nplain talk in farmer locale"]
   RulePack [shape=box, style="filled", fillcolor="#E3F2FD", label="Rule Pack"]
   Partner  [shape=box, style="filled", fillcolor="#FFF8E1", label="Value Chain Partner"]
 
@@ -48,6 +48,9 @@ digraph SD1 {
     Receipt    [shape=box, style="filled", fillcolor="#FFFFFF", label="Share Receipt"]
     Revoking   [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Revoking"]
 
+    Deciding   [shape=ellipse, style="filled,bold", fillcolor="#F8BBD0", penwidth=2, label="Deciding\n(in-zoomed in SD1.2)"]
+    Standing   [shape=box, style="filled", fillcolor="#FCE4EC", label="Standing Permission"]
+
     Expiring       [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Expiring"]
 
     Refusing       [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Refusing"]
@@ -64,6 +67,7 @@ digraph SD1 {
     { rank=same; Pack }
     { rank=same; Consenting; Refusing; ConsentDraft }
     { rank=same; Consent; ConsentBound; ConsentRefused }
+    { rank=same; Deciding; Standing }
     { rank=same; Delivering }
     { rank=same; Token; Receipt }
     { rank=same; Revoking; ConsentRevoked }
@@ -90,6 +94,15 @@ digraph SD1 {
     Refusing   -> ConsentRefused [style=dotted, arrowhead=normal, label="to"]
     Expiring   -> ConsentExpired [style=dotted, arrowhead=normal, label="to"]
     Revoking   -> ConsentRevoked [style=dotted, arrowhead=normal, label="to"]
+
+    // Deciding is what happens when the partner asks again. It consumes the
+    // request, requires the box the farmer drew at Consenting, and either
+    // delivers inside it or hands the card back to the farmer.
+    Consenting -> Standing    [arrowhead=normal, style=dashed, label="yields on\n\"next time do this\""]
+    Standing   -> Deciding    [arrowhead=odot,   label="requires"]
+    Pack       -> Deciding    [arrowhead=odot,   label="requires", constraint=false]
+    Deciding   -> Delivering  [arrowhead=normal, label="auto_deliver"]
+    Deciding   -> Consenting  [arrowhead=normal, style=dashed, label="ask_farmer", constraint=false]
   }
 
   Requesting [shape=ellipse, style="filled", fillcolor="#FFF8E1", label="Requesting"]
@@ -106,4 +119,6 @@ digraph SD1 {
   Partner  -> Requesting [arrowhead=dot,  label="handles"]
   Requesting -> Request  [arrowhead=normal, label="yields"]
   Request  -> Consenting [arrowhead=normal, label="consumes", constraint=false]
+  Request  -> Deciding   [arrowhead=normal, label="consumes", constraint=false]
+  Farmer   -> Standing   [arrowhead=dot,    label="draws · pauses · revokes", constraint=false]
 }

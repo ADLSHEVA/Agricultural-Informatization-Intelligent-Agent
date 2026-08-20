@@ -1,4 +1,4 @@
-// OPM state-specified transforming links — Consent lifecycle
+// OPM state-specified transforming links — Consent and Rule Pack Draft lifecycles
 // Rounded rectangle = object state
 // Thick contour = initial; double contour = final
 // Process changes Object from input-state to output-state
@@ -8,7 +8,7 @@ digraph STATES {
     rankdir=LR
     fontname="Helvetica"
     fontsize=16
-    label="Consent states — Binding / Refusing / Expiring / Revoking"
+    label="Object states — Consent (bind / refuse / expire / revoke) and Rule Pack Draft (approve / reject)"
     labelloc=t
     pad=0.45
     bgcolor="white"
@@ -49,4 +49,31 @@ digraph STATES {
   Expiring -> expired  [arrowhead=normal, label="to"]
   bound    -> Revoking [arrowhead=normal, label="from"]
   Revoking -> revoked  [arrowhead=normal, label="to"]
+
+  // Rule Pack Draft — block A. Sanitizing happens before the farmer ever sees
+  // the draft, so `proposed` already excludes yield and revenue. Only Approving
+  // writes a pack the compiler will read; a rejected draft is kept, not deleted.
+  subgraph cluster_Draft {
+    label="Rule Pack Draft"
+    fontsize=13
+    fontname="Helvetica"
+    style="rounded,filled"
+    color="#4527A0"
+    fillcolor="#EDE7F6"
+    margin=16
+
+    proposed [shape=box, style="rounded,filled,bold", fillcolor="#FFF3E0", penwidth=2.4, label="proposed\n(initial · already sanitised)"]
+    approved [shape=box, style="rounded,filled", fillcolor="#C8E6C9", peripheries=2, label="approved\n(final · compilable)"]
+    rejected [shape=box, style="rounded,filled", fillcolor="#FFE0B2", peripheries=2, label="rejected\n(final · kept for the record)"]
+  }
+
+  Sanitizing [shape=ellipse, style="filled,bold", fillcolor="#D1C4E9", penwidth=2, label="Sanitizing\ndrops yield + revenue"]
+  Approving  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Approving"]
+  Rejecting  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Rejecting"]
+
+  Sanitizing -> proposed [arrowhead=normal, label="to"]
+  proposed   -> Approving [arrowhead=normal, label="from"]
+  Approving  -> approved  [arrowhead=normal, label="to"]
+  proposed   -> Rejecting [arrowhead=normal, label="from"]
+  Rejecting  -> rejected  [arrowhead=normal, label="to"]
 }

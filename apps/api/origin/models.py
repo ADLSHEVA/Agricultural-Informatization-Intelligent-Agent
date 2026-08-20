@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 ConsentState = Literal["draft", "purpose-bound", "refused", "expired", "revoked", "erased"]
 EventStatus = Literal["draft", "confirmed"]
+RuleDraftState = Literal["proposed", "approved", "rejected"]
 Role = Literal["farmer", "partner"]
 
 
@@ -133,6 +134,53 @@ class Principal(BaseModel):
     locale: str = "en"
 
 
+class RuleDraft(BaseModel):
+    """A rule pack proposed from a partner questionnaire. Never compiled from.
+
+    `pack` has already been through `questionnaire.sanitize_draft`, so it holds
+    only fields Origin will carry. `dropped_refused` and `dropped_unknown` record
+    what the questionnaire asked for and did not get — kept so the farmer can see
+    the refusal and so it is auditable afterwards.
+    """
+
+    id: str
+    farm_id: str
+    partner_id: str
+    partner_name: str
+    market: str = "EU"
+    source_excerpt: str = ""
+    pack: dict
+    dropped_refused: list[str] = Field(default_factory=list)
+    dropped_unknown: list[str] = Field(default_factory=list)
+    plain_summary: str = ""
+    state: RuleDraftState = "proposed"
+    created_at: datetime
+    decided_at: datetime | None = None
+
+
+class TermsReview(BaseModel):
+    """A plain-talk risk card read out of a partner's data terms.
+
+    Everything here is a reading of their document, except `over_ask`, which is
+    a deterministic diff against what the farmer has actually allowed.
+    """
+
+    id: str
+    farm_id: str
+    partner_name: str
+    locale: str = "en"
+    source_excerpt: str = ""
+    resale: str = "unclear"
+    aggregation: str = "unclear"
+    third_parties: list[str] = Field(default_factory=list)
+    retention_days: int | None = None
+    fields_claimed: list[str] = Field(default_factory=list)
+    red_flags: list[str] = Field(default_factory=list)
+    over_ask: list[str] = Field(default_factory=list)
+    plain_summary: str = ""
+    created_at: datetime
+
+
 class EventConfirmBody(BaseModel):
     product_name: str | None = None
     rate: float | None = None
@@ -158,8 +206,10 @@ class StandingPolicy(BaseModel):
 
 class ConsentCreateBody(BaseModel):
     pack_id: str
-    partner_id: str
-    purpose: str = "seasonal_spray_statement"
+    # Both are derived from the pack. Send them to assert what you think you are
+    # consenting to — a mismatch is a 409, never a silent substitution.
+    partner_id: str | None = None
+    purpose: str | None = None
 
 
 class BindBody(BaseModel):
@@ -168,7 +218,14 @@ class BindBody(BaseModel):
 
 class DeskRequestBody(BaseModel):
     farm_id: str
-    purpose: str = "seasonal_spray_statement"
+    # Default: whatever the partner's own rule pack asks for. Hard-coding a US
+    # purpose here would mislabel every EU request on the farmer's Today card.
+    purpose: str | None = None
+
+
+class TermsReviewBody(BaseModel):
+    text: str
+    partner_name: str | None = None
 
 
 class ApiError(BaseModel):

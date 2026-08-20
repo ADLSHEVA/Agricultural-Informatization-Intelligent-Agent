@@ -46,4 +46,24 @@ digraph LEGEND {
     P1 -> R1 [arrowhead=normal, label="yields"]
     W1 -> Pa [arrowhead=diamond, label="consists of"]
   }
+
+  subgraph cluster_origin {
+    label="Colour conventions in these files"
+    style="rounded,filled"
+    fillcolor="#FAFAFA"
+    color="#9E9E9E"
+
+    Env  [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Environmental\n(we own the prompt, not the thing)"]
+    Core [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Origin core process"]
+    Agt  [shape=ellipse, style="filled,bold", fillcolor="#F8BBD0", penwidth=2, label="Agent process\n(decides inside the farmer's box)"]
+    Aut  [shape=ellipse, style="filled", fillcolor="#D1C4E9", label="Authoring / review process\n(model drafts, farmer approves)"]
+    Fin  [shape=box, style="rounded,filled", fillcolor="#FFE0B2", peripheries=2, label="Final state"]
+
+    Sx [shape=box, style="rounded,filled", fillcolor="#FFF3E0", penwidth=2.4, label="Initial state"]
+    Px [shape=ellipse, style="filled", fillcolor="#BBDEFB", label="Process"]
+    Sy [shape=box, style="rounded,filled", fillcolor="#C8E6C9", label="Resulting state"]
+
+    Sx -> Px [arrowhead=normal, label="from"]
+    Px -> Sy [style=dotted, arrowhead=normal, label="to"]
+  }
 }

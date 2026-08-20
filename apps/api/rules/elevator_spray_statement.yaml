@@ -1,6 +1,7 @@
 id: elevator_spray_statement_v1
 partner: heartland-grain
 partner_name: Heartland Grain LLC
+market: US
 purpose: seasonal_spray_statement
 until: end_of_calendar_year
 reuse: false

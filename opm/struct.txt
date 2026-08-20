@@ -22,20 +22,22 @@ digraph STRUCT {
   PWA    [shape=box, style="filled", fillcolor="#FFF8E1", label="Farmer PWA\nTypeScript · Next.js"]
   Desk   [shape=box, style="filled", fillcolor="#FFF8E1", label="Partner Desk\nTypeScript · Next.js"]
   API    [shape=box, style="filled", fillcolor="#E3F2FD", label="Origin API\nPython 3.12 · FastAPI"]
+  Agent  [shape=box, style="filled,bold", fillcolor="#FCE4EC", penwidth=1.6, label="Origin Agent\nstanding permission · agent_log"]
   Store  [shape=box, style="filled", fillcolor="#E3F2FD", label="Event Store\nFirestore"]
   Files  [shape=box, style="filled", fillcolor="#E3F2FD", label="Evidence Store\nCloud Storage"]
-  Rules  [shape=box, style="filled", fillcolor="#E3F2FD", label="Rule Pack\nYAML"]
+  Rules  [shape=box, style="filled", fillcolor="#E3F2FD", label="Rule Pack\nYAML + approved drafts"]
   Wallet [shape=box, style="filled", fillcolor="#E3F2FD", label="Consent Wallet"]
   Adapt  [shape=box, style="filled", fillcolor="#E3F2FD", label="Import Adapter"]
 
-  Gemini [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Gemini Flash-Lite\n(environmental)"]
+  Gemini [shape=box, style="filled,dashed", fillcolor="#F3E5F5", label="Vertex AI Gemini\ngemini-3.7-flash\n(environmental · ADC only)"]
 
   { rank=same; PWA; Desk; API }
-  { rank=same; Store; Files; Rules; Wallet; Adapt }
+  { rank=same; Store; Files; Rules; Wallet; Adapt; Agent }
 
   Origin -> PWA    [arrowhead=diamond, label="consists of"]
   Origin -> Desk   [arrowhead=diamond]
   Origin -> API    [arrowhead=diamond]
+  Origin -> Agent  [arrowhead=diamond]
   Origin -> Store  [arrowhead=diamond]
   Origin -> Files  [arrowhead=diamond]
   Origin -> Rules  [arrowhead=diamond]
@@ -44,5 +46,6 @@ digraph STRUCT {
 
   PWA -> API [arrowhead=normal, label="OpenAPI + JWT"]
   Desk -> API [arrowhead=normal, label="OpenAPI + JWT"]
-  Gemini -> API [style=dashed, arrowhead=odot, label="instrument of\nCapturing & Explaining"]
+  Agent -> Rules [arrowhead=odot, style=dashed, label="decides on\ncompiled fields only"]
+  Gemini -> API [style=dashed, arrowhead=odot, label="instrument of\nCapturing · Explaining · Narrating\nAuthoring · Digesting"]
 }
