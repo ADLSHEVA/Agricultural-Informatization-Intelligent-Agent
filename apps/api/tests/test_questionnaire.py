@@ -74,6 +74,63 @@ def test_sanitize_draft_drops_yield_and_revenue():
     assert pack["market"] == "US"
 
 
+def test_sanitize_maps_model_synonyms_onto_the_vocab():
+    """Gemini names facts in its own words. Aliases must hit refuse/keep, not unknown."""
+    pack, refused, unknown = sanitize_draft(
+        {
+            "fields": [
+                "parcel_id",
+                "application_date",
+                "application_rate",
+                "buffer_strip_width",
+                "lot_yield",
+                "crop_sale_value",
+            ],
+            "purpose": "seasonal_spray_statement",
+        },
+        market="US",
+        partner_id="heartland-grain",
+    )
+    assert "date" in pack["fields"]
+    assert "rate" in pack["fields"]
+    assert "buffer_m" in pack["fields"]
+    assert refused == ["yield", "revenue"]
+    assert "lot_yield" not in unknown
+    assert "crop_sale_value" not in unknown
+    assert "yield" not in pack["fields"]
+    assert "revenue" not in pack["fields"]
+
+
+def test_sanitize_folds_gemini_coinages_from_the_live_elevator_form():
+    """Exact names Vertex emitted on 20 Aug 2026 for the sample Heartland form."""
+    pack, refused, unknown = sanitize_draft(
+        {
+            "fields": [
+                "product_name",
+                "rate",
+                "crop_sale_revenue",
+                "delivered_lot_yield",
+                "parcel_field_identification",
+                "plant_protection_application_date",
+                "watercourse_buffer_strip_width",
+            ],
+            "purpose": "seasonal_spray_statement",
+        },
+        market="US",
+        partner_id="heartland-grain",
+    )
+    assert pack["fields"] == [
+        "parcel_id",
+        "date",
+        "product_name",
+        "rate",
+        "buffer_m",
+        "buffer_ok",
+    ]
+    assert refused == ["yield", "revenue"]
+    assert unknown == []
+
+
 def test_elevator_questionnaire_cannot_ask_yield_or_revenue(local_store):
     """D6 in the wire: POST the form, yield and revenue must not survive."""
     ensure_demo()

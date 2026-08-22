@@ -4,7 +4,7 @@ Language choice first, then screens, APIs, and data. This is the implementation 
 
 Every subsection is marked **✅ built** (in the repo today, verified by `pytest` / `tsc`) or **⏳ planned** (decided, not wired). The point of the marks is to stop this document drifting from the code again. Cross-document decisions live in [`decisions.md`](decisions.md) — if this file contradicts it, this file is wrong.
 
-Last verified 20 August 2026: `pytest` 26 passed with no credentials configured, `tsc --noEmit` clean, all nine Graphviz sources rendering.
+Last verified 21 August 2026: `pytest` 32 passed with no credentials configured, `tsc --noEmit` clean, all nine Graphviz sources rendering. Block A/B screens wired. Desk inbox is one live file per farm and purpose.
 
 Updated architecture diagrams (English):
 
@@ -54,7 +54,8 @@ agri/
         capture/page.tsx    # Speak / Snap + confirm draft
         consent/[id]/page.tsx
         receipts/page.tsx   # Who has it
-        desk/page.tsx       # Partner Desk at /desk
+        desk/page.tsx       # Partner Desk at /desk — questionnaire upload
+        terms/page.tsx      # risk card, reached from /receipts (not a tab)
         layout.tsx
         globals.css         # hand-written, no Tailwind
       components/
@@ -111,12 +112,13 @@ agri/
 - ⏳ Firebase Auth (email magic link or demo PIN) — today `lib/session.ts` holds the two demo bearer tokens
 - ✅ Fetch only the Python API; no Firestore from the browser
 
-Visual constitution (from LiteFarm / sonu-ai / SARAL):
+Visual constitution:
 
-- One column, max width 28rem, phone first
-- Touch targets ≥ 56px
-- Contrast for sunlight (near-black on cream, not grey on white)
-- No hamburger, no KPI tiles, no settings maze
+- **Office web first.** Challenge 3 (consent, receipts, terms, questionnaires) is the same class of work as John Deere Operations Center **Web** and EU CAP geospatial **online applications** — farm office / kitchen table, not in-cab. USDA (2023): 82% of farms have a smartphone *and* 69% a desktop/laptop; Deere ships Web + Mobile as two surfaces. Origin is the Web surface.
+- Farmer pages: office web portal. Work canvas is **~90% of the viewport** (`min(90vw, 120rem)`), gutters `5vw`, aligned with the top bar. Cards fill that canvas (hero cards span the row; lists use `auto-fit` min 28rem). Body copy stays `max-width: 65ch`. Primary buttons cap at ~24rem so they do not become billboards. Light top bar on desktop (Today · Speak · Who), bottom tabs only below 800px. Not a phone chassis and not a 42rem reading strip on a 1440px monitor. Type: Outfit. Accent: forest green on bone paper (not cream+brass).
+- Partner desk `/desk`: same ~90vw canvas, two columns on desktop.
+- Touch targets ≥ 56px on the narrow layout; contrast for mixed indoor light (near-black on cream)
+- No hamburger, no KPI tiles, no settings maze, no fourth farmer tab
 - ⏳ First run: pick country (sets farmer locale for Gemini plain-talk) → tap one parcel (or accept the demo farm) → Today. Today the demo farm is seeded server-side.
 
 ### 3.2 Four farmer screens ✅
@@ -218,8 +220,8 @@ No always-on Vertex endpoint. Call the model per request; scale to zero with the
 | `deliver.py` | Delivering | No — issue token, write receipt, lot passport, desk gate |
 | `agent.py` | Deciding (in-zoomed in [`opm/sd1_2.txt`](../opm/sd1_2.txt)) | **No** for the decision; ✅ yes for the narration written *after* it (block C) |
 | `geometry.py` | instrument of Compiling | No — buffer vs watercourse |
-| `questionnaire.py` ✅ module + routes, ⏳ screens | Rule-pack authoring (block A) | Yes — **draft only**; `sanitize_draft()` then the farmer approves |
-| `terms.py` ✅ module, ⏳ routes | Terms review (block B) | Yes — digest and phrasing only; the over-ask diff is code |
+| `questionnaire.py` ✅ module + routes + screens | Rule-pack authoring (block A) | Yes — **draft only**; `sanitize_draft()` then the farmer approves |
+| `terms.py` ✅ module + routes + screens | Terms review (block B) | Yes — digest and phrasing only; the over-ask diff is code |
 | `config.py` | — | No — settings, no logic |
 
 If extraction fails, `gemini_router.py` falls back to a regex heuristic and returns a sparse draft for the farmer to fix. Do not escalate to Pro.
@@ -253,7 +255,7 @@ GET    /v1/receipts
 GET    /v1/me/export              # GDPR Art. 20 portable JSON (US label if country=US)
 DELETE /v1/me                     # Art. 17 erase evidence + disable tokens
 
-GET    /v1/desk/packs             partner; live packs, then greyed rows
+GET    /v1/desk/packs             partner; `desk_inbox` — one current file per farm+purpose, grey only if none live
 GET    /v1/desk/packs/{id}        410 if revoked / expired / refused / erased
 POST   /v1/desk/requests          partner asks; returns the agent decision
 
@@ -262,10 +264,10 @@ POST   /v1/desk/requests          partner asks; returns the agent decision
 ✅ GET    /v1/rule-drafts          farmer; drafts awaiting a verdict
 ✅ POST   /v1/rule-drafts/{id}/approve   -> re-sanitises, writes the pack to the store
 ✅ POST   /v1/rule-drafts/{id}/reject    -> rejected (final, kept for the record)
-⏳ POST   /v1/terms/review         farmer; pasted clause -> TermsReview + over_ask[]
+✅ POST   /v1/terms/review         farmer; pasted clause -> TermsReview + over_ask[]
 ```
 
-Block A routes are wired and covered by `tests/test_questionnaire.py`. Block B still needs `POST /v1/terms/review`; `terms.py` is written and nothing imports it yet.
+Block A routes are covered by `tests/test_questionnaire.py`. Block B routes are covered by `tests/test_terms.py`. Screens: `/desk` uploads a questionnaire; Today shows proposed drafts for Approve / Refuse; `/terms` is reached from Who (no fourth tab).
 
 Error shape: `{ "code": "consent_unavailable", "message": "..." }`, sent as FastAPI `detail`. Never leak other farmers’ packs — every farmer route checks `row.farm_id == principal.farm_id`.
 
@@ -322,13 +324,13 @@ agent_log/{entryId}
   same shape as rules/*.yaml, plus origin: "questionnaire_draft"
   compile.load_rule reads these first; partner_index / rule_for_market overlay YAML
 
-⏳ terms_reviews/{reviewId}         # block B — id trv-<10hex>
-  farm_id, partner_hint, partner_name, locale, resale, aggregation,
-  third_parties (yes|no|unclear each), retention_days, fields_claimed[],
+✅ terms_reviews/{reviewId}         # block B — id trv-<10hex>
+  farm_id, partner_name, locale, resale, aggregation,
+  third_parties[], retention_days, fields_claimed[],
   over_ask[] (computed in code, not by the model), red_flags[], created_at
 ```
 
-`rule_drafts`, `rule_packs` and `terms_reviews` are in `store._empty()`. `compile.py` overlays `rule_packs` on `rules/*.yaml` (same id or same partner replaces the shipped pack; a new partner does not steal the market default). `terms_reviews` is reserved for block B.
+`rule_drafts`, `rule_packs` and `terms_reviews` are in `store._empty()`. `compile.py` overlays `rule_packs` on `rules/*.yaml` (same id or same partner replaces the shipped pack; a new partner does not steal the market default).
 
 Evidence paths locally: `data/evidence/{farmId}/{eventId}/audio.webm` and `label.jpg`. ⏳ `gs://…` with a 30-day lifecycle.
 

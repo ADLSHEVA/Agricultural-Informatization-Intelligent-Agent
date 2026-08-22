@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { BigButton } from "@/components/BigButton";
+import { UncontrolledFile } from "@/components/UncontrolledFile";
 
 type Draft = {
   id: string;
@@ -23,7 +24,7 @@ export default function CapturePage() {
   const [holding, setHolding] = useState(false);
   const [audio, setAudio] = useState<Blob | null>(null);
   const [image, setImage] = useState<File | null>(null);
-  const [note, setNote] = useState("Field 3, product X, 1.2 L/ha, 16 ft filter strip by the ditch");
+  const [note, setNote] = useState("");
   const [parcel, setParcel] = useState("p3");
   const [parcels, setParcels] = useState<any[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -31,9 +32,12 @@ export default function CapturePage() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api.today().then((t) => {
-      if (t.parcels?.length) setParcels(t.parcels);
-    }).catch(() => undefined);
+    api
+      .today()
+      .then((t) => {
+        if (t.parcels?.length) setParcels(t.parcels);
+      })
+      .catch(() => undefined);
   }, []);
 
   async function startHold() {
@@ -70,7 +74,16 @@ export default function CapturePage() {
       if (audio) form.set("audio", audio, "voice.webm");
       if (image) form.set("image", image);
       const ev = await api.postEvent(form);
-      setDraft(ev);
+      setDraft({
+        id: ev.id,
+        parcel_id: ev.parcel_id || parcel,
+        product_name: ev.product_name ?? "",
+        rate: ev.rate ?? null,
+        unit: ev.unit || "L/ha",
+        buffer_m: ev.buffer_m ?? null,
+        note: ev.note ?? "",
+        confidence: ev.confidence ?? 0,
+      });
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -101,77 +114,110 @@ export default function CapturePage() {
   if (draft) {
     return (
       <>
-        <h1>Is this right?</h1>
-        <section className="card">
-          <label>Parcel</label>
-          <select value={draft.parcel_id} onChange={(e) => setDraft({ ...draft, parcel_id: e.target.value })}>
-            {parcels.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label} · {p.crop}
-              </option>
-            ))}
-          </select>
-          <label>Product</label>
-          <input value={draft.product_name} onChange={(e) => setDraft({ ...draft, product_name: e.target.value })} />
-          <label>Rate</label>
-          <input
-            type="number"
-            step="0.1"
-            value={draft.rate ?? ""}
-            onChange={(e) => setDraft({ ...draft, rate: e.target.value ? Number(e.target.value) : null })}
-          />
-          <label>Buffer (m)</label>
-          <input
-            type="number"
-            step="0.5"
-            value={draft.buffer_m ?? ""}
-            onChange={(e) => setDraft({ ...draft, buffer_m: e.target.value ? Number(e.target.value) : null })}
-          />
+        <div className="page-head">
+          <h1>Is this right?</h1>
           <p className="muted">Fix at most a few words. You are the source of truth.</p>
+        </div>
+        <section className="card">
+          <div className="fields-2">
+            <div>
+              <label>Parcel</label>
+              <select
+                value={draft.parcel_id || "p3"}
+                onChange={(e) => setDraft({ ...draft, parcel_id: e.target.value })}
+              >
+                {(parcels.length ? parcels : [{ id: "p3", label: "Ditch 40", crop: "corn" }]).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} · {p.crop}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label>Product</label>
+              <input
+                value={draft.product_name ?? ""}
+                onChange={(e) => setDraft({ ...draft, product_name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label>Rate</label>
+              <input
+                type="number"
+                step="0.1"
+                value={draft.rate ?? ""}
+                onChange={(e) => setDraft({ ...draft, rate: e.target.value ? Number(e.target.value) : null })}
+              />
+            </div>
+            <div>
+              <label>Buffer (m)</label>
+              <input
+                type="number"
+                step="0.5"
+                value={draft.buffer_m ?? ""}
+                onChange={(e) => setDraft({ ...draft, buffer_m: e.target.value ? Number(e.target.value) : null })}
+              />
+            </div>
+          </div>
         </section>
         {err && <p className="bad">{err}</p>}
-        <BigButton disabled={busy} onClick={confirm}>
-          That’s right
-        </BigButton>
+        <div className="actions">
+          <BigButton disabled={busy} onClick={confirm}>
+            That’s right
+          </BigButton>
+        </div>
       </>
     );
   }
 
   return (
     <>
-      <h1>Speak or snap</h1>
-      <section className="card">
-        <p>Hold to talk, or photograph the can. One event only.</p>
-        <label>Parcel</label>
-        <select value={parcel} onChange={(e) => setParcel(e.target.value)}>
-          {(parcels.length ? parcels : [{ id: "p3", label: "P3", crop: "wheat" }]).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label} · {p.crop}
-            </option>
-          ))}
-        </select>
-        <BigButton
-          className={`big hold ${holding ? "rec" : ""}`}
-          kind="ghost"
-          onMouseDown={startHold}
-          onMouseUp={stopHold}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            startHold();
-          }}
-          onTouchEnd={stopHold}
-        >
-          {holding ? "Listening…" : audio ? "Recorded — tap send" : "Hold to talk"}
-        </BigButton>
-        <label>Photo of the can</label>
-        <input type="file" accept="image/*" capture="environment" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
-        <label>Or type it</label>
-        <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} />
-      </section>
-      {err && <p className="bad">{err}</p>}
-      <BigButton disabled={busy} onClick={send}>
-        {busy ? "Reading…" : "Send"}
-      </BigButton>
+      <div className="page-head">
+        <h1>Speak or snap</h1>
+        <p className="muted">Hold to talk, or photograph the can. One event only.</p>
+      </div>
+      <div className="split">
+        <section className="card">
+          <h2>Record</h2>
+          <BigButton
+            className={`big hold ${holding ? "rec" : ""}`}
+            kind="ghost"
+            onMouseDown={startHold}
+            onMouseUp={stopHold}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              startHold();
+            }}
+            onTouchEnd={stopHold}
+          >
+            {holding ? "Listening…" : audio ? "Recorded — tap send" : "Hold to talk"}
+          </BigButton>
+          <label>Photo of the can</label>
+          <UncontrolledFile accept="image/*" capture="environment" onFile={setImage} />
+        </section>
+        <section className="card">
+          <h2>Or type it</h2>
+          <label>Parcel</label>
+          <select value={parcel} onChange={(e) => setParcel(e.target.value)}>
+            {(parcels.length ? parcels : [{ id: "p3", label: "P3", crop: "wheat" }]).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label} · {p.crop}
+              </option>
+            ))}
+          </select>
+          <label>Note</label>
+          <textarea
+            rows={5}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. Field 3, product X, 1.2 L/ha, 16 ft strip by the ditch"
+          />
+          {err && <p className="bad">{err}</p>}
+          <BigButton disabled={busy} onClick={send}>
+            {busy ? "Reading…" : "Send"}
+          </BigButton>
+        </section>
+      </div>
     </>
   );
 }

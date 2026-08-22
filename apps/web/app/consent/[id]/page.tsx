@@ -11,7 +11,7 @@ export default function ConsentPage() {
   const [c, setC] = useState<any>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const [standing, setStanding] = useState(true);
+  const [standing, setStanding] = useState(false);
 
   useEffect(() => {
     api.getConsent(id).then(setC).catch((e) => setErr(e.message));
@@ -44,30 +44,43 @@ export default function ConsentPage() {
   const talk = c?.plain_talk;
   return (
     <>
-      <h1>Give or refuse</h1>
-      {talk ? (
+      <div className="page-head">
+        <h1>Give or refuse</h1>
+        {!talk && <p className="muted">Loading…</p>}
+      </div>
+      {talk && (
         <section className="card">
-          <p>
-            <strong>Who:</strong> {talk.who}
-          </p>
-          <p>
-            <strong>Why:</strong> {talk.why}
-          </p>
-          <p>
-            <strong>What:</strong> {talk.what}
-          </p>
-          <p>
-            <strong>Until:</strong> {talk.until}
-          </p>
-          <p>
-            <strong>Reuse:</strong> {talk.reuse}
-          </p>
+          <div className="facts">
+            <p>
+              <strong>Who</strong>
+              <br />
+              {talk.who}
+            </p>
+            <p>
+              <strong>Why</strong>
+              <br />
+              {talk.why}
+            </p>
+            <p>
+              <strong>What</strong>
+              <br />
+              {talk.what}
+            </p>
+            <p>
+              <strong>Until</strong>
+              <br />
+              {talk.until}
+            </p>
+            <p>
+              <strong>Reuse</strong>
+              <br />
+              {talk.reuse}
+            </p>
+          </div>
         </section>
-      ) : (
-        <p className="muted">Loading…</p>
       )}
       {err && <p className="bad">{err}</p>}
-      <label className="card" style={{ display: "flex", gap: "0.75rem", alignItems: "flex-start" }}>
+      <label className="card standing">
         <input type="checkbox" checked={standing} onChange={(e) => setStanding(e.target.checked)} />
         <span>
           Do this automatically next time for {c?.partner_name ?? "this elevator"} this crop year. Origin

@@ -37,6 +37,37 @@ CARRYABLE_FIELDS = ("parcel_id", "date", "product_name", "rate", "unit", "buffer
 # second time even if a pack is hand-edited later.
 NEVER_SHARE = ("yield", "revenue")
 
+# Exact spellings we have already seen. `_canonical_name` also folds new
+# coinages by token (`delivered_lot_yield` -> `yield`) so the next Gemini run
+# cannot dodge the gate by inventing another synonym.
+FIELD_ALIASES = {
+    "field_id": "parcel_id",
+    "field_identification": "parcel_id",
+    "parcel": "parcel_id",
+    "block": "parcel_id",
+    "product": "product_name",
+    "buffer": "buffer_m",
+    "application_date": "date",
+    "spray_date": "date",
+    "day_of_application": "date",
+    "application_rate": "rate",
+    "dose": "rate",
+    "dosage": "rate",
+    "buffer_strip_width": "buffer_m",
+    "buffer_width": "buffer_m",
+    "watercourse_buffer_width": "buffer_m",
+    "filter_strip": "buffer_m",
+    "unsprayed_strip": "buffer_m",
+    "lot_yield": "yield",
+    "harvest_yield": "yield",
+    "crop_yield": "yield",
+    "harvest_volume": "yield",
+    "crop_sale_value": "revenue",
+    "sale_value": "revenue",
+    "income": "revenue",
+    "turnover": "revenue",
+}
+
 # Which buffer check a market's pack proves compliance with.
 MARKET_BUFFER_CHECK = {"US": "buffer_ok", "EU": "gaec4_buffer_ok"}
 
@@ -48,6 +79,37 @@ def _slug(text: str, default: str) -> str:
     return out or default
 
 
+def _canonical_name(name: str) -> str:
+    """Fold a model-proposed field onto Origin's vocabulary, or leave it unknown."""
+    raw = _SLUG.sub("_", str(name or "").strip().lower()).strip("_")
+    if not raw:
+        return raw
+    if raw in FIELD_ALIASES:
+        return FIELD_ALIASES[raw]
+    if raw in CARRYABLE_FIELDS or raw in NEVER_SHARE or raw in BUFFER_KEYS:
+        return raw
+    toks = set(raw.split("_"))
+    if "yield" in toks or "bushel" in toks or "bushels" in toks or "rendement" in toks:
+        return "yield"
+    if toks & {"revenue", "income", "turnover"} or ("sale" in toks and "value" in toks):
+        return "revenue"
+    if "buffer" in toks or "gaec" in toks or ("filter" in toks and "strip" in toks):
+        return "buffer_m"
+    if "parcel" in toks or "lpis" in toks:
+        return "parcel_id"
+    if "field" in toks and toks & {"id", "identification", "number", "block"}:
+        return "parcel_id"
+    if "product" in toks or "pesticide" in toks or "chemical" in toks or "substance" in toks:
+        return "product_name"
+    if "date" in toks:
+        return "date"
+    if "rate" in toks or "dose" in toks or "dosage" in toks:
+        return "rate"
+    if "unit" in toks:
+        return "unit"
+    return raw
+
+
 def sanitize_draft(proposal: dict, *, market: str, partner_id: str) -> tuple[dict, list[str], list[str]]:
     """Cut a proposal down to a pack Origin will carry.
 
@@ -55,7 +117,7 @@ def sanitize_draft(proposal: dict, *, market: str, partner_id: str) -> tuple[dic
     unknown. Order follows `CARRYABLE_FIELDS`, not the questionnaire's, so two
     partners asking for the same facts get byte-identical field lists.
     """
-    asked = [str(f).strip().lower() for f in (proposal.get("fields") or []) if str(f).strip()]
+    asked = [_canonical_name(f) for f in (proposal.get("fields") or []) if str(f).strip()]
     asked_set = set(asked)
 
     refused = [f for f in NEVER_SHARE if f in asked_set]

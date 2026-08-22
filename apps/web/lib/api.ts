@@ -11,10 +11,53 @@ async function req(path: string, init: RequestInit = {}, token = FARMER_TOKEN) {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const err = data?.detail ?? data ?? { code: "error", message: res.statusText };
-    throw Object.assign(new Error(err.message || "Request failed"), { status: res.status, body: err });
+    const message = typeof err === "string" ? err : err.message || res.statusText;
+    throw Object.assign(new Error(message || "Request failed"), { status: res.status, body: err });
   }
   return data;
 }
+
+export type RuleDraft = {
+  id: string;
+  farm_id: string;
+  partner_id: string;
+  partner_name: string;
+  market: string;
+  source_excerpt: string;
+  pack: {
+    id: string;
+    fields: string[];
+    purpose: string;
+    until: string;
+    reuse: boolean;
+    exclude?: string[];
+  };
+  dropped_refused: string[];
+  dropped_unknown: string[];
+  refused_fields: string[];
+  unknown_fields: string[];
+  plain_summary: string;
+  state: "proposed" | "approved" | "rejected";
+  created_at: string;
+  decided_at: string | null;
+};
+
+export type TermsReview = {
+  id: string;
+  farm_id: string;
+  partner_name: string;
+  locale: string;
+  source_excerpt: string;
+  resale: "yes" | "no" | "unclear" | string;
+  aggregation: "yes" | "no" | "unclear" | string;
+  third_parties: string[];
+  retention_days: number | null;
+  fields_claimed: string[];
+  red_flags: string[];
+  over_ask: string[];
+  plain_summary: string;
+  created_at: string;
+};
 
 export const api = {
   today: () => req("/v1/today"),
@@ -32,4 +75,13 @@ export const api = {
   deskPacks: () => req("/v1/desk/packs", {}, PARTNER_TOKEN),
   deskRequest: (farmId = "demo-farm") =>
     req("/v1/desk/requests", { method: "POST", body: JSON.stringify({ farm_id: farmId }) }, PARTNER_TOKEN),
+  deskQuestionnaire: (form: FormData) =>
+    req("/v1/desk/questionnaires", { method: "POST", body: form }, PARTNER_TOKEN) as Promise<RuleDraft>,
+  ruleDrafts: () => req("/v1/rule-drafts") as Promise<RuleDraft[]>,
+  approveRuleDraft: (id: string) =>
+    req(`/v1/rule-drafts/${id}/approve`, { method: "POST" }) as Promise<RuleDraft>,
+  rejectRuleDraft: (id: string) =>
+    req(`/v1/rule-drafts/${id}/reject`, { method: "POST" }) as Promise<RuleDraft>,
+  reviewTerms: (body: { text: string; partner_name?: string }) =>
+    req("/v1/terms/review", { method: "POST", body: JSON.stringify(body) }) as Promise<TermsReview>,
 };

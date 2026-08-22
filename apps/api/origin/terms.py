@@ -19,7 +19,7 @@ from origin import store
 from origin.compile import BUFFER_KEYS
 from origin.gemini_router import digest_terms
 from origin.models import TermsReview
-from origin.questionnaire import NEVER_SHARE
+from origin.questionnaire import FIELD_ALIASES, NEVER_SHARE
 
 # Longest retention Origin will call reasonable without comment. A season plus a
 # compliance year: past this the farmer is being asked for an archive, not a
@@ -75,9 +75,10 @@ def review(*, farm_id: str, text: str, partner_hint: str = "", locale: str = "en
     digest = digest_terms(text=text, partner_hint=partner_hint, locale=locale)
     partner_name = str(digest.get("partner_name") or partner_hint or "This partner").strip()
 
-    claimed = sorted(
-        {str(f).strip().lower() for f in (digest.get("fields_claimed") or []) if str(f).strip()}
-    )
+    claimed_raw = [
+        str(f).strip().lower() for f in (digest.get("fields_claimed") or []) if str(f).strip()
+    ]
+    claimed = sorted({FIELD_ALIASES.get(name, name) for name in claimed_raw})
     allowed, _matched = allowed_now(farm_id, partner_name)
     # The whole point of the card: fields they claim that no live policy covers.
     # Buffer check keys are Origin's own compliance verdicts, never a farmer fact,

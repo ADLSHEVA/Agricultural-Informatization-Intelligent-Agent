@@ -35,7 +35,7 @@ Seeded demo farm: **Riverside Farms**, Story County IA, 212 ac, six fields. Fiel
 1. Open [http://localhost:3000](http://localhost:3000). Today shows *Heartland Grain LLC wants a spray statement*.
 2. Speak, snap a can, or send the typed note on field 3 (16 ft filter strip).
 3. Confirm the draft card (you are the source of truth).
-4. Give or refuse the five-line consent card. Leaving **"do this automatically next time"** ticked also arms a standing policy.
+4. Give or refuse the five-line consent card. Ticking **"do this automatically next time"** also arms a standing policy (off by default).
 5. Partner desk at `/desk` can open the pack; **Revoke** greys it out.
 6. **Who has it**: export (GDPR Art. 20) or erase (Art. 17).
 7. Back at `/desk`, **Ask the farm again**: the agent auto-delivers under the standing policy, and Today reports *Origin already sent it*.
@@ -131,7 +131,7 @@ $env:PYTHONPATH = "."
 py -3 -m pytest tests -q
 ```
 
-**26 passed** as of 20 August 2026, with **no credentials configured**. Coverage includes buffer compile checks (one event into both the US and the EU pack), the Sunday loop (capture → confirm → bind + standing → desk → auto-deliver → revoke), rule-pack market keys, the offline Vertex fallback, and block A (`test_questionnaire.py`: a questionnaire that asks for yield and revenue cannot put those fields in a draft). Keep the suite green offline — that is the demo-safety guarantee.
+**34 passed** as of 22 August 2026, with **no credentials configured**. Coverage includes buffer compile checks (one event into both the US and the EU pack), the Sunday loop (capture → confirm → bind + standing → desk → auto-deliver → revoke, desk showing one current file not stacked copies), rule-pack market keys, the offline Vertex fallback, block A (`test_questionnaire.py`: yield and revenue cannot survive, including Gemini coinages), and block B (`test_terms.py`: a resale clause against a standing policy raises flags and lists `over_ask`). Keep the suite green offline — that is the demo-safety guarantee.
 
 ```powershell
 cd apps\web
@@ -148,16 +148,16 @@ foreach ($f in @("sd","sd1","sd1_1","sd1_2","framework","stack","states","struct
 }
 ```
 
-## Status (20 August 2026)
+## Status (22 August 2026)
 
 **Done:** product and OPM architecture; expert-review gaps (partner request, expiry, adapter phase 2, GCP wiring, cost labels); refuse / locale / GDPR export-erase; US and EU rule packs off one event; Origin agent with standing policies and auto-delivery; agent decision narration and over-ask diff (block C, wired end to end); **Gemini on Vertex AI through ADC, with no API key anywhere**; OPM sources cover the agent layer, including the new SD1.2, and all nine render clean.
 
-**Verified 20 August 2026:** `pytest` **26 passed** with *no credentials configured at all* — that offline-green result is the demo-safety guarantee, not a footnote; `tsc --noEmit` exit 0; all nine Graphviz sources render to 18 PNG/SVG files under `opm/rendered/`.
+**Verified 22 August 2026:** `pytest` **34 passed** with *no credentials configured at all*; `tsc --noEmit` exit 0. Live Vertex (`gemini-3.7-flash`, ADC, `location=global`) ran the farmer loop: questionnaire → approve → Speak → Give → Who → Desk current file. Yield and revenue did not survive sanitise. Desk shows one live file per farm and purpose (`deliver.desk_inbox`); Who groups receipts by partner.
 
-**Block A (API):** partner questionnaire → sanitised draft → farmer approve/reject. `sanitize_draft()` drops `yield`/`revenue` unconditionally; `compile.load_rule` reads approved packs from the store before `rules/*.yaml`. Covered by `tests/test_questionnaire.py`. Farmer and desk screens for it are not built yet.
+**Block A:** partner questionnaire → sanitised draft → farmer approve/reject. Desk uploads the form; Today shows the draft. `_canonical_name` folds Gemini coinages onto the vocabulary. Covered by `tests/test_questionnaire.py`.
 
-**Written but not yet wired:** `origin/terms.py` (block B — the over-ask diff is a set difference in code). No route calls it yet.
+**Block B:** farmer pastes a partner clause on `/terms` (reached from Who, not a fourth tab). Resale flags come from the reading; `over_ask[]` is a set difference against live standing policies, in code. Covered by `tests/test_terms.py`.
 
-**Not yet:** block A/B screens, block B route, Firestore/GCS/Firebase adapters plus Cloud Run manifests (block F), live Cloud Run deploy, ISOXML import, real LPIS, polished offline queue.
+**Not yet:** Firestore/GCS/Firebase adapters plus Cloud Run manifests (block F), live Cloud Run deploy, ISOXML import, real LPIS, polished offline queue.
 
 Licence: **Apache-2.0** (see [`LICENSE`](LICENSE)). Team keeps IP of what is built during 16–18 October 2026.

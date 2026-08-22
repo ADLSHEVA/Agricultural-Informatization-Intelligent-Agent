@@ -47,3 +47,51 @@ def desk_visible(consent: ConsentRecord) -> None:
             410,
             {"code": "consent_unavailable", "message": f"Pack not visible ({consent.state})"},
         )
+
+
+def _is_live(consent: ConsentRecord) -> bool:
+    try:
+        desk_visible(consent)
+        return True
+    except HTTPException:
+        return False
+
+
+def desk_inbox(partner_id: str) -> list[dict]:
+    """One current file per farm + purpose.
+
+    Asking again under standing permission used to append another identical
+    live row. The desk should show the file they can open now, and a grey
+    row only when they can no longer open anything for that farm and purpose.
+    """
+    buckets: dict[tuple[str, str], dict] = {}
+    for c_row in store.list_where("consents", partner_id=partner_id):
+        c = store.as_consent(c_row)
+        pack = store.get("packs", c.pack_id) or {}
+        ts = str(pack.get("created_at") or "")
+        key = (c.farm_id, c.purpose)
+        slot = buckets.setdefault(key, {"live": None, "live_ts": "", "grey": None, "grey_ts": ""})
+        if _is_live(c):
+            if ts >= slot["live_ts"]:
+                slot["live"] = {
+                    "consent": c.model_dump(mode="json"),
+                    "pack": pack,
+                    "grey": False,
+                }
+                slot["live_ts"] = ts
+            continue
+        if c.state in {"revoked", "expired", "refused", "erased"} and ts >= slot["grey_ts"]:
+            slot["grey"] = {
+                "consent": c.model_dump(mode="json"),
+                "pack": {"id": pack.get("id"), "fields": {}},
+                "grey": True,
+            }
+            slot["grey_ts"] = ts
+    out: list[dict] = []
+    for slot in buckets.values():
+        if slot["live"]:
+            out.append(slot["live"])
+        elif slot["grey"]:
+            out.append(slot["grey"])
+    out.sort(key=lambda row: row.get("consent", {}).get("id", ""), reverse=True)
+    return out

@@ -7,5 +7,5 @@ export function BigButton({
   className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { kind?: "primary" | "ghost" | "danger" }) {
-  return <button className={`big ${kind} ${className}`.trim()} {...props} />;
+  return <button type="button" className={`big ${kind} ${className}`.trim()} {...props} />;
 }

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
-from origin import agent, capture, consent, deliver, questionnaire, store
+from origin import agent, capture, consent, deliver, questionnaire, store, terms
 from origin.auth import farmer_only, partner_only, principal
 from origin.compile import BUFFER_KEYS, compile_event, load_rule
 from origin.config import settings
@@ -20,6 +20,7 @@ from origin.models import (
     PartnerRequest,
     Principal,
     RuleDraft,
+    TermsReviewBody,
 )
 from origin.seed import ensure_demo
 
@@ -105,12 +106,27 @@ def confirm_event(
     row = store.get("events", event_id)
     if not row or row.get("farm_id") != who.farm_id:
         raise HTTPException(404, {"code": "not_found", "message": "Event not found"})
+    if row.get("status") == "confirmed":
+        # One event, one outcome. A retry (double tap, lost response) must not
+        # compile a second pack and open a second consent for the same fact.
+        raise HTTPException(
+            409,
+            {"code": "already_confirmed", "message": "Event was already confirmed"},
+        )
+    patch = body.model_dump(exclude_unset=True)
+    # Resolve the parcel before anything is written. A failed confirm must not
+    # leave a confirmed event behind — the agent would wedge into need_capture
+    # forever with nothing on Today explaining why.
+    target_parcel = patch.get("parcel_id") or row["parcel_id"]
+    parcel_row = store.get("parcels", target_parcel)
+    if not parcel_row:
+        raise HTTPException(
+            400,
+            {"code": "bad_parcel", "message": f"Unknown parcel {target_parcel}"},
+        )
     # exclude_unset: only the fields the farmer actually edited. Sending the
     # whole model would arrive as a wall of nulls and blank the untouched ones.
-    event = capture.confirm(store.as_event(row), **body.model_dump(exclude_unset=True))
-    parcel_row = store.get("parcels", event.parcel_id)
-    if not parcel_row:
-        raise HTTPException(400, {"code": "bad_parcel", "message": "Unknown parcel"})
+    event = capture.confirm(store.as_event(row), **patch)
     farm = store.get("farms", who.farm_id) or {}
     open_reqs = store.list_where("requests", farm_id=who.farm_id, status="open")
     req_id = open_reqs[0]["id"] if open_reqs else None
@@ -241,6 +257,19 @@ def list_receipts(who: Principal = Depends(principal)) -> list[dict]:
     rows = store.list_where("receipts", farm_id=who.farm_id)
     rows.sort(key=lambda r: r.get("issued_at", ""), reverse=True)
     return rows
+
+
+@app.post("/v1/terms/review")
+def review_terms(body: TermsReviewBody, who: Principal = Depends(principal)) -> dict:
+    farmer_only(who)
+    farm = store.get("farms", who.farm_id) or {}
+    record = terms.review(
+        farm_id=who.farm_id,
+        text=body.text,
+        partner_hint=(body.partner_name or "").strip(),
+        locale=str(farm.get("locale") or who.locale or "en"),
+    )
+    return record.model_dump(mode="json")
 
 
 @app.get("/v1/me/export")
@@ -388,21 +417,7 @@ def reject_rule_draft(draft_id: str, who: Principal = Depends(principal)) -> dic
 @app.get("/v1/desk/packs")
 def desk_packs(who: Principal = Depends(principal)) -> list[dict]:
     partner_only(who)
-    out = []
-    for c_row in store.list_where("consents", partner_id=who.partner_id):
-        c = store.as_consent(c_row)
-        try:
-            deliver.desk_visible(c)
-        except HTTPException:
-            continue
-        pack = store.get("packs", c.pack_id)
-        out.append({"consent": c.model_dump(mode="json"), "pack": pack, "grey": False})
-    for c_row in store.list_where("consents", partner_id=who.partner_id):
-        c = store.as_consent(c_row)
-        if c.state in {"revoked", "expired", "refused", "erased"}:
-            pack = store.get("packs", c.pack_id) or {}
-            out.append({"consent": c.model_dump(mode="json"), "pack": {"id": pack.get("id"), "fields": {}}, "grey": True})
-    return out
+    return deliver.desk_inbox(who.partner_id or "")
 
 
 @app.get("/v1/desk/packs/{pack_id}")
