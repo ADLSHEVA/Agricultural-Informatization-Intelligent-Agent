@@ -21,6 +21,12 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 DB_PATH = DATA_DIR / "origin.json"
 _lock = threading.Lock()
 
+# Consistency note: every put/get rewrites or rereads the whole file under a
+# single process lock, but multi-row sequences (bind -> issue -> receipt) are
+# NOT atomic across calls — a crash between them can leave half-bound state.
+# Acceptable for the local demo store; the Firestore adapter must wrap such
+# sequences in a real transaction.
+
 
 def _empty() -> dict[str, Any]:
     return {

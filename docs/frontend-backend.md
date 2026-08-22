@@ -4,7 +4,7 @@ Language choice first, then screens, APIs, and data. This is the implementation 
 
 Every subsection is marked **✅ built** (in the repo today, verified by `pytest` / `tsc`) or **⏳ planned** (decided, not wired). The point of the marks is to stop this document drifting from the code again. Cross-document decisions live in [`decisions.md`](decisions.md) — if this file contradicts it, this file is wrong.
 
-Last verified 21 August 2026: `pytest` 32 passed with no credentials configured, `tsc --noEmit` clean, all nine Graphviz sources rendering. Block A/B screens wired. Desk inbox is one live file per farm and purpose.
+Last verified 22 August 2026: `pytest` 44 passed with no credentials configured, `tsc --noEmit` clean, all nine Graphviz sources rendering. Block A/B screens wired. Desk inbox is one live file per farm and purpose, newest first; repeated asks reuse the waiting card or the live file instead of stacking copies.
 
 Updated architecture diagrams (English):
 
@@ -307,7 +307,7 @@ requests/{requestId}
 
 policies/{policyId}
   farm_id, partner_id, purpose, allowed_fields[], until, reuse,
-  state (active|paused|revoked), created_from_consent_id
+  state (active|paused|revoked|expired), created_from_consent_id
 
 agent_log/{entryId}
   farm_id, request_id, pack_id, consent_id, policy_id, decision, reason, at,
@@ -430,7 +430,7 @@ Containment is strict and one-directional: an extra field the farmer never appro
 - ✅ Refuse: set consent `refused` (final). No token. Desk 410. Keep the document so the farmer can show they said no.
 - ✅ Expire: `expire_if_due` runs lazily on every desk read; past `until` → `expired`, tokens disabled, receipts greyed.
 - ✅ Export (`GET /v1/me/export`): JSON portable pack of farm, parcels, events, packs, consents, policies, receipts. Labelled GDPR Art. 20, or “US farm-data originator portable copy” when `country == "US"`.
-- ✅ Erase (`DELETE /v1/me`): wipe evidence blobs, blank note/product/rate on events, tombstone consents as `erased`, disable all tokens, revoke policies. Receipts remain as hash-only stubs so the farmer still sees “who had it”. Not a fifth screen.
+- ✅ Erase (`DELETE /v1/me`): wipe evidence blobs, blank note/product/rate on events, tombstone consents as `erased`, disable all tokens, revoke policies, **empty pack `fields`/`checks` and strip receipt `field_list`** (partner name + `pack_hash` stay, so Who still shows who had it). Not a fifth screen.
 
 ⏳ No public bucket listing; evidence URLs signed and short-lived.
 

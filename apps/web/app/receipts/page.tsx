@@ -16,7 +16,8 @@ type Group = {
 function groupReceipts(rows: any[]): Group[] {
   const map = new Map<string, any[]>();
   for (const r of rows) {
-    const key = r.partner_name || r.consent_id;
+    // partner_id is stable; older rows predate it and fall back to the name.
+    const key = r.partner_id || r.partner_name || r.consent_id;
     const list = map.get(key) ?? [];
     list.push(r);
     map.set(key, list);

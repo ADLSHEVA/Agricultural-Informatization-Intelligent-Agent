@@ -7,6 +7,8 @@ from origin.models import Parcel
 
 # Demo drainage ditch along the north edge of field 3 (metres, local projected sketch).
 # US primary: ~16 ft filter strip. EU adapter (GAEC 4) reuses the same geometry.
+# SINGLE-FARM ASSUMPTION: one module-level watercourse serves the seeded demo
+# farm only. A second farm needs per-farm watercourses on the parcel/farm record.
 WATERCOURSE = LineString([(0, 80), (220, 80)])
 REQUIRED_BUFFER_M = 5.0
 

@@ -8,7 +8,6 @@ from uuid import uuid4
 from origin import store
 from origin.gemini_router import extract_event
 from origin.models import EventRecord, FarmEventDraft
-from origin.store import DATA_DIR
 
 # Which event fields may legitimately be set back to null — `rate` and
 # `buffer_m` today. Read off the model so it cannot drift from it.
@@ -40,7 +39,9 @@ def create_draft(
     )
     event_id = f"evt-{uuid4().hex[:10]}"
     evidence: list[str] = []
-    ev_dir = DATA_DIR / "evidence" / farm_id / event_id
+    # Read DATA_DIR off the store module at call time, not import time: tests
+    # repoint store.DATA_DIR at a tmp dir, and this file must follow.
+    ev_dir = store.DATA_DIR / "evidence" / farm_id / event_id
     if audio:
         ev_dir.mkdir(parents=True, exist_ok=True)
         path = ev_dir / "audio.webm"
@@ -100,7 +101,7 @@ def confirm(event: EventRecord, **patch) -> EventRecord:
 
 
 def wipe_evidence(farm_id: str) -> None:
-    root = DATA_DIR / "evidence" / farm_id
+    root = store.DATA_DIR / "evidence" / farm_id
     if not root.exists():
         return
     for path in root.rglob("*"):

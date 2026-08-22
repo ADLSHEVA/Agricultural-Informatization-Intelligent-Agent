@@ -55,6 +55,9 @@ def _budget_ok() -> bool:
     if cap <= 0:
         return True
     day = date.today().isoformat()
+    if len(_calls) > 30:  # prune stale days so the counter cannot grow forever
+        for stale in [k for k in _calls if k != day]:
+            _calls.pop(stale, None)
     used = _calls.get(day, 0)
     if used >= cap:
         log.warning("daily call cap %d reached on %s; using deterministic fallback", cap, day)
@@ -152,8 +155,9 @@ def explain_consent(
         f"Write a five-line farmer consent card in language/locale '{locale}'. "
         "JSON keys: who, why, what, until, reuse. Short sentences. No legal jargon. "
         f"Partner: {partner_name}. Purpose: {purpose}. Until: {until}. "
-        f"Reuse allowed: {reuse}. Fields they receive: {json.dumps(fields)}. "
-        "In 'what', name only those fields. Say they do NOT get yield or revenue. JSON only."
+        f"Reuse allowed: {reuse}. Field names they receive: {', '.join(fields.keys())}. "
+        "In 'what', name only those fields by name. Say they do NOT get yield or "
+        "revenue. JSON only."
     )
     raw = _generate([_text_part(prompt)], label="explain_consent")
     if raw is None:
@@ -202,9 +206,15 @@ def narrate_decision(
         f"Fields the partner wanted that the farmer never allowed: "
         f"{', '.join(extra_fields) or 'none'}.\n"
         + (
-            "Say plainly that this was sent under permission the farmer already "
+            "Say plainly that the partner already holds the current file for this "
+            "exact fact, so nothing new was sent."
+            if reason_code == "already_live"
+            else "Say plainly that this was sent under permission the farmer already "
             "gave, name what went, and say it did not include yield or revenue."
             if decision == "auto_deliver"
+            else "Say plainly that a card for this exact request is already waiting "
+            "on the farmer's yes or no, so nothing was sent twice."
+            if reason_code == "pending_decision"
             else "Say plainly that nothing was sent and why the farmer is being asked."
         )
         + " Return the note only."
@@ -230,11 +240,23 @@ def _narration_fallback(
     extra = ", ".join(extra_fields)
     shown = ", ".join(fields)
     if locale.startswith("fr"):
+        if reason_code == "already_live":
+            return f"{partner_name} a déjà le fichier actuel pour ce fait précis — rien de nouveau n’est parti."
         if decision == "auto_deliver":
             return (
                 f"Origin a envoyé à {partner_name} les champs que vous avez déjà "
                 f"acceptés ({shown}). Ni rendement, ni revenu. Révoquez depuis "
                 "« Qui » si c’était une erreur."
+            )
+        if reason_code == "pending_decision":
+            return (
+                f"{partner_name} attend toujours votre oui ou votre non — la carte "
+                "est déjà ouverte. Rien n’a été envoyé deux fois."
+            )
+        if reason_code == "pending_decision":
+            return (
+                f"{partner_name} attend toujours votre oui ou votre non — la carte "
+                "est déjà ouverte. Rien n’a été envoyé deux fois."
             )
         if decision == "need_capture":
             return (
@@ -256,10 +278,20 @@ def _narration_fallback(
             "la carte pour décider."
         )
 
+    if reason_code == "already_live":
+        return (
+            f"{partner_name} already holds the current file for this exact fact — "
+            "nothing new was sent."
+        )
     if decision == "auto_deliver":
         return (
             f"Origin sent {partner_name} the fields you already agreed to "
             f"({shown}). Not your yield or revenue. Revoke on Who if that was wrong."
+        )
+    if reason_code == "pending_decision":
+        return (
+            f"{partner_name} is still waiting on your yes or no — the card is "
+            "already open. Nothing was sent twice."
         )
     if decision == "need_capture":
         return (

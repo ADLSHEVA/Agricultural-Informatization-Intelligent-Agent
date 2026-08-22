@@ -178,3 +178,34 @@ def test_no_api_key_is_read_anywhere(monkeypatch):
         assert gemini_router._client() is None
     finally:
         config.reset_settings()
+
+
+def test_demo_tokens_can_be_switched_off(monkeypatch):
+    """ORIGIN_DEMO_TOKENS=false kills the demo-bearer path entirely."""
+    from origin import config
+
+    monkeypatch.setenv("ORIGIN_DEMO_TOKENS", "false")
+    config.reset_settings()
+    try:
+        c = TestClient(app)
+        r = c.get("/v1/today", headers={"Authorization": "Bearer demo-farmer"})
+        assert r.status_code == 401
+    finally:
+        config.reset_settings()
+
+
+def test_evidence_follows_the_patched_data_dir(local_store):
+    """capture reads DATA_DIR off the store module at call time, so repointing
+    it keeps evidence blobs inside the test sandbox."""
+    from origin import capture
+
+    ensure_demo()
+    event = capture.create_draft(
+        farm_id="demo-farm",
+        parcel_id="p3",
+        note="product X",
+        audio=b"fake-bytes",
+    )
+    expected = local_store.DATA_DIR / "evidence" / "demo-farm" / event.id / "audio.webm"
+    assert expected.exists()
+    assert str(expected) in event.evidence_uris[0]

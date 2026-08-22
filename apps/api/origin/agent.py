@@ -81,6 +81,23 @@ def match_standing(
     return None
 
 
+def expire_policies_if_due() -> None:
+    """Lazy expiry for standing policies — the mirror of consent.expire_if_due.
+
+    Without it Today kept advertising boxes whose time had run out: the agent's
+    own matching ignores them by date, but the farmer-visible list never moved.
+    """
+    today = date.today()
+    for row in store.list_where("policies", state="active"):
+        try:
+            until = date.fromisoformat(str(row.get("until") or ""))
+        except ValueError:
+            continue
+        if until < today:
+            row["state"] = "expired"
+            store.put("policies", row["id"], row)
+
+
 def latest_confirmed(farm_id: str) -> EventRecord | None:
     rows = store.list_where("events", farm_id=farm_id, status="confirmed")
     if not rows:
@@ -128,20 +145,13 @@ def fulfill_pack(
     pack,
     request_id: str | None,
     locale: str,
-    force_ask: bool = False,
 ) -> dict:
     """Compile is already done. Auto-bind if a standing policy covers the pack."""
     fields = list(pack.fields.keys())
-    policy = None
-    if not force_ask:
-        policy = match_standing(pack.farm_id, pack.partner_id, pack.purpose, fields)
+    policy = match_standing(pack.farm_id, pack.partner_id, pack.purpose, fields)
     draft = consent.open_draft(pack, locale=locale, request_id=request_id)
     if policy is None:
-        reason_code, extra = (
-            ("farmer_asked", [])
-            if force_ask
-            else diagnose_ask(pack.farm_id, pack.partner_id, pack.purpose, fields)
-        )
+        reason_code, extra = diagnose_ask(pack.farm_id, pack.partner_id, pack.purpose, fields)
         return _write_log(
             {
                 "farm_id": pack.farm_id,
@@ -190,6 +200,13 @@ def fulfill_pack(
     ) | {"mode": "auto", "consent": bound, "token": token, "receipt": receipt, "policy": policy}
 
 
+def _link(request_id: str) -> None:
+    row = store.get("requests", request_id)
+    if row:
+        row["status"] = "linked"
+        store.put("requests", request_id, row)
+
+
 def tick_request(req: PartnerRequest) -> dict:
     """Run one open partner request to a decision. No chat. No Gemini on share/no-share."""
     farm = store.get("farms", req.farm_id) or {}
@@ -225,12 +242,66 @@ def tick_request(req: PartnerRequest) -> dict:
         return _blocked("confirmed event points at an unknown field")
 
     rule_id = req.rule_id or default_rule_for(req.partner_id, farm)
+
+    # A card for exactly this fact may already be waiting on the farmer. Reuse
+    # it — a second ask must not stack another pack and draft in the wallet.
+    pending = consent.find_open_draft(req.farm_id, req.partner_id, req.purpose, event.id)
+    if pending is not None:
+        _link(req.id)
+        return _write_log(
+            {
+                "farm_id": req.farm_id,
+                "request_id": req.id,
+                "pack_id": pending.pack_id,
+                "consent_id": pending.id,
+                "decision": "ask_farmer",
+                "reason_code": "pending_decision",
+                "extra_fields": [],
+                "reason": f"a card for this fact is already waiting ({pending.id})",
+                "note": narrate_decision(
+                    decision="ask_farmer",
+                    reason_code="pending_decision",
+                    partner_name=req.partner_name,
+                    purpose=req.purpose,
+                    fields=list(pending.fields),
+                    extra_fields=[],
+                    locale=locale,
+                ),
+            }
+        ) | {"mode": "ask", "consent": pending}
+
+    # A live file compiled from this same event may already cover the ask.
+    # Re-delivering would bind an identical consent, token and receipt.
+    live = deliver.find_live_consent(req.farm_id, req.partner_id, req.purpose, event.id)
+    if live is not None:
+        existing, pack_row, token = live
+        _link(req.id)
+        return _write_log(
+            {
+                "farm_id": req.farm_id,
+                "request_id": req.id,
+                "pack_id": existing.pack_id,
+                "consent_id": existing.id,
+                "decision": "auto_deliver",
+                "reason_code": "already_live",
+                "extra_fields": [],
+                "reason": f"the current file ({existing.id}) already covers this exact fact",
+                "note": narrate_decision(
+                    decision="auto_deliver",
+                    reason_code="already_live",
+                    partner_name=req.partner_name,
+                    purpose=req.purpose,
+                    fields=list(existing.fields),
+                    extra_fields=[],
+                    locale=locale,
+                ),
+            }
+        ) | {"mode": "auto", "consent": existing}
+
     pack = compile_event(event, store.as_parcel(parcel_row), rule_id=rule_id)
     result = fulfill_pack(pack=pack, request_id=req.id, locale=locale)
     if result.get("mode") in {"auto", "ask"}:
-        row = store.get("requests", req.id) or req.model_dump(mode="json")
-        row["status"] = "linked"
-        store.put("requests", req.id, row)
+        _link(req.id)
     return result
 
 

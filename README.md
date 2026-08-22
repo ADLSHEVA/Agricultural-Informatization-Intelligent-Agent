@@ -131,7 +131,7 @@ $env:PYTHONPATH = "."
 py -3 -m pytest tests -q
 ```
 
-**34 passed** as of 22 August 2026, with **no credentials configured**. Coverage includes buffer compile checks (one event into both the US and the EU pack), the Sunday loop (capture → confirm → bind + standing → desk → auto-deliver → revoke, desk showing one current file not stacked copies), rule-pack market keys, the offline Vertex fallback, block A (`test_questionnaire.py`: yield and revenue cannot survive, including Gemini coinages), and block B (`test_terms.py`: a resale clause against a standing policy raises flags and lists `over_ask`). Keep the suite green offline — that is the demo-safety guarantee.
+**44 passed** as of 22 August 2026, with **no credentials configured**. Coverage includes buffer compile checks (one event into both the US and the EU pack), the Sunday loop (capture → confirm → bind + standing → desk → auto-deliver → revoke, desk showing one current file not stacked copies), rule-pack market keys, the offline Vertex fallback, block A (`test_questionnaire.py`: yield and revenue cannot survive, including Gemini coinages), block B (`test_terms.py`: a resale clause against a standing policy raises flags and lists `over_ask`), plus confirm idempotency, parcel validation, one-grant-per-pack reuse, hash-only erase stubs, desk inbox ordering, ask-again dedup (waiting card reused, live file not re-delivered), lazy policy expiry, dead-token desk lockout, and the demo-token kill switch. Keep the suite green offline — that is the demo-safety guarantee.
 
 ```powershell
 cd apps\web
@@ -152,7 +152,7 @@ foreach ($f in @("sd","sd1","sd1_1","sd1_2","framework","stack","states","struct
 
 **Done:** product and OPM architecture; expert-review gaps (partner request, expiry, adapter phase 2, GCP wiring, cost labels); refuse / locale / GDPR export-erase; US and EU rule packs off one event; Origin agent with standing policies and auto-delivery; agent decision narration and over-ask diff (block C, wired end to end); **Gemini on Vertex AI through ADC, with no API key anywhere**; OPM sources cover the agent layer, including the new SD1.2, and all nine render clean.
 
-**Verified 22 August 2026:** `pytest` **34 passed** with *no credentials configured at all*; `tsc --noEmit` exit 0. Live Vertex (`gemini-3.7-flash`, ADC, `location=global`) ran the farmer loop: questionnaire → approve → Speak → Give → Who → Desk current file. Yield and revenue did not survive sanitise. Desk shows one live file per farm and purpose (`deliver.desk_inbox`); Who groups receipts by partner.
+**Verified 22 August 2026:** `pytest` **44 passed** with *no credentials configured at all*; `tsc --noEmit` exit 0. Live Vertex (`gemini-3.7-flash`, ADC, `location=global`) ran the farmer loop: questionnaire → approve → Speak → Give → Who → Desk current file. Yield and revenue did not survive sanitise. Desk shows one live file per farm and purpose (`deliver.desk_inbox`); Who groups receipts by partner.
 
 **Block A:** partner questionnaire → sanitised draft → farmer approve/reject. Desk uploads the form; Today shows the draft. `_canonical_name` folds Gemini coinages onto the vocabulary. Covered by `tests/test_questionnaire.py`.
 

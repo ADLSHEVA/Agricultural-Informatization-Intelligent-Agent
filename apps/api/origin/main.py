@@ -48,10 +48,21 @@ def health() -> dict:
 @app.get("/v1/today")
 def today(who: Principal = Depends(principal)) -> dict:
     farmer_only(who)
+    agent.expire_policies_if_due()
     farm = store.get("farms", who.farm_id)
     parcels = store.list_where("parcels", farm_id=who.farm_id)
-    open_reqs = store.list_where("requests", farm_id=who.farm_id, status="open")
-    drafts = [c for c in store.list_where("consents", farm_id=who.farm_id) if c.get("state") == "draft"]
+    # Longest waiting first — dict order would make the visible card random.
+    open_reqs = sorted(
+        store.list_where("requests", farm_id=who.farm_id, status="open"),
+        key=lambda r: str(r.get("created_at") or ""),
+    )
+    def _waiting_since(row: dict) -> str:
+        pack = store.get("packs", row.get("pack_id") or "") or {}
+        return str(pack.get("created_at") or "")
+    drafts = sorted(
+        (c for c in store.list_where("consents", farm_id=who.farm_id) if c.get("state") == "draft"),
+        key=_waiting_since,
+    )
     policies = store.list_where("policies", farm_id=who.farm_id, state="active")
     return {
         "farm": farm,
@@ -66,13 +77,17 @@ def today(who: Principal = Depends(principal)) -> dict:
 
 @app.post("/v1/events")
 async def post_event(
-    parcel_id: str = Form("p3"),
+    # Required: a missing parcel must fail loudly, never silently land on
+    # Ditch 40 — the one field where a buffer claim has legal weight.
+    parcel_id: str = Form(...),
     note: str = Form(""),
     audio: UploadFile | None = File(default=None),
     image: UploadFile | None = File(default=None),
     who: Principal = Depends(principal),
 ) -> dict:
     farmer_only(who)
+    if not parcel_id.strip():
+        raise HTTPException(400, {"code": "bad_parcel", "message": "parcel_id is required"})
     audio_bytes = await audio.read() if audio is not None else None
     image_bytes = await image.read() if image is not None else None
     source = "voice" if audio_bytes else "photo" if image_bytes else "note"
@@ -311,6 +326,17 @@ def erase_me(who: Principal = Depends(principal)) -> dict:
         store.put("consents", c["id"], c)
         consent._disable_tokens(c["id"])
         consent._grey_receipts(c["id"])
+    # Packs hold copied field values (product, rate). The events were scrubbed
+    # above; leaving the same values in packs would make erase cosmetic.
+    for p in store.list_where("packs", farm_id=who.farm_id):
+        p["fields"] = {}
+        p["checks"] = {}
+        store.put("packs", p["id"], p)
+    # Receipts become hash-only stubs: the farmer still sees who had it and can
+    # verify the pack_hash, but what was in the pack is gone (docs §5).
+    for r in store.list_where("receipts", farm_id=who.farm_id):
+        r["field_list"] = []
+        store.put("receipts", r["id"], r)
     for policy in store.list_where("policies", farm_id=who.farm_id):
         policy["state"] = "revoked"
         store.put("policies", policy["id"], policy)
@@ -321,7 +347,11 @@ def erase_me(who: Principal = Depends(principal)) -> dict:
 def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> dict:
     partner_only(who)
     partner_id = who.partner_id or ""
-    farm = store.get("farms", body.farm_id) or {}
+    farm = store.get("farms", body.farm_id)
+    if not farm:
+        # An unknown farm must not collect junk requests (and agent_log noise);
+        # the partner gets a clean 404 instead.
+        raise HTTPException(404, {"code": "not_found", "message": "Farm not found"})
     rule_id = agent.default_rule_for(partner_id, farm)
     rule = load_rule(rule_id)
     req = PartnerRequest(
@@ -367,6 +397,10 @@ def _rule_draft_out(draft: RuleDraft | dict) -> dict:
     data = draft.model_dump(mode="json") if isinstance(draft, RuleDraft) else dict(draft)
     data["refused_fields"] = list(data.get("dropped_refused") or [])
     data["unknown_fields"] = list(data.get("dropped_unknown") or [])
+    # The farmer should read a date, not the rule-pack keyword.
+    pack = data.get("pack") or {}
+    if isinstance(pack, dict) and pack.get("until"):
+        data["until_date"] = questionnaire.preview_until(pack)
     return data
 
 

@@ -63,6 +63,7 @@ export default function TodayPage() {
             <div>
               <h2>{d.partner_name} wants a new share pack</h2>
               <p>{d.plain_summary}</p>
+              {d.until_date && <p className="muted">That is {d.until_date}.</p>}
               {d.refused_fields?.length || d.dropped_refused?.length ? (
                 <p className="bad">
                   They asked for {(d.refused_fields || d.dropped_refused).join(", ")}. Origin stripped that.

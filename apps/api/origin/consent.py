@@ -72,6 +72,26 @@ def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> 
 def bind(consent: ConsentRecord) -> ConsentRecord:
     if consent.state != "draft":
         raise HTTPException(409, {"code": "invalid_state", "message": f"Cannot bind from {consent.state}"})
+    if not consent.reuse:
+        # The card said "Reuse: No", so it must mean something: this compiled
+        # file can be granted exactly once. A second grant of the same pack —
+        # even after revoke or expiry — is refused; the partner asks again and
+        # a fresh compile comes back to the farmer. Auto-delivery compiles a
+        # new pack each time, so the standing-policy loop is unaffected.
+        taken = [
+            row
+            for row in store.list_where("consents", pack_id=consent.pack_id)
+            if row.get("id") != consent.id
+            and row.get("state") in {"purpose-bound", "revoked", "expired", "erased"}
+        ]
+        if taken:
+            raise HTTPException(
+                409,
+                {
+                    "code": "reuse_forbidden",
+                    "message": f"Pack {consent.pack_id} was already granted (reuse is off)",
+                },
+            )
     consent.state = "purpose-bound"
     store.put("consents", consent.id, consent.model_dump(mode="json"))
     return consent
@@ -116,6 +136,7 @@ def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
         consent_id=consent.id,
         pack_id=consent.pack_id,
         partner_name=consent.partner_name,
+        partner_id=consent.partner_id,
         pack_hash=digest,
         field_list=consent.fields,
         issued_at=datetime.now(timezone.utc),
@@ -124,6 +145,25 @@ def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
     )
     store.put("receipts", receipt.id, receipt.model_dump(mode="json"))
     return receipt
+
+
+def find_open_draft(
+    farm_id: str, partner_id: str, purpose: str, event_id: str
+) -> ConsentRecord | None:
+    """A draft already waiting on the farmer for this same fact?
+
+    Repeated partner asks used to compile a fresh pack and open a new draft
+    every time — orphan cards piling up in the wallet while Today showed only
+    one of them. If a draft exists whose pack covers this event, partner and
+    purpose, reuse it instead of opening another.
+    """
+    for row in store.list_where("consents", farm_id=farm_id, partner_id=partner_id, state="draft"):
+        if row.get("purpose") != purpose:
+            continue
+        pack = store.get("packs", row.get("pack_id") or "")
+        if pack and event_id in (pack.get("event_ids") or []):
+            return store.as_consent(row)
+    return None
 
 
 def _disable_tokens(consent_id: str) -> None:

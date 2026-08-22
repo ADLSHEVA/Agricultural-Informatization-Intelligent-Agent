@@ -8,7 +8,13 @@ async function req(path: string, init: RequestInit = {}, token = FARMER_TOKEN) {
   }
   const res = await fetch(`${apiBase()}${path}`, { ...init, headers });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Non-JSON body (proxy 502 HTML, empty gateway reply) — the error branch
+    // below falls back to statusText instead of crashing on SyntaxError.
+  }
   if (!res.ok) {
     const err = data?.detail ?? data ?? { code: "error", message: res.statusText };
     const message = typeof err === "string" ? err : err.message || res.statusText;
@@ -37,6 +43,7 @@ export type RuleDraft = {
   refused_fields: string[];
   unknown_fields: string[];
   plain_summary: string;
+  until_date?: string;
   state: "proposed" | "approved" | "rejected";
   created_at: string;
   decided_at: string | null;

@@ -81,6 +81,9 @@ class ReceiptRecord(BaseModel):
     consent_id: str
     pack_id: str
     partner_name: str
+    # Stable grouping key for the Who page; empty on rows written before it
+    # existed (the UI falls back to partner_name for those).
+    partner_id: str = ""
     pack_hash: str
     field_list: list[str]
     issued_at: datetime
@@ -200,7 +203,9 @@ class StandingPolicy(BaseModel):
     allowed_fields: list[str]
     until: date
     reuse: bool = False
-    state: Literal["active", "paused", "revoked"] = "active"
+    # expired is set lazily (agent.expire_policies_if_due) so Today stops
+    # advertising a box whose time has run out.
+    state: Literal["active", "paused", "revoked", "expired"] = "active"
     created_from_consent_id: str | None = None
 
 

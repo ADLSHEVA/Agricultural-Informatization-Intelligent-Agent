@@ -48,6 +48,7 @@ D6 is enforced in code, not by convention:
 | **D8** | Confirmed feature blocks: **A** questionnaire → draft rule pack, **B** partner terms → plain-talk risk card, **C** agent decision narration + over-ask diff, **F** GCP wiring. Declined this round: vendor export mapping (Deere / FieldView / ISOXML import), once-only cross-partner dedup. |
 | **D9** | Block F is delivered as **code-ready plus deployment manifests**, not a live deploy. Cloud adapters are lazy imports behind settings, so the local JSON store and the offline fallbacks keep the demo runnable with no credentials and no cloud SDKs installed. |
 | **D10** | Two markets from one core: the same event compiles into a US pack (`elevator_spray_statement_v1`, `buffer_ok`) and an EU pack (`coop_ppp_statement_v1`, `gaec4_buffer_ok`). Selection follows `farms.country` / `farms.locale`. Nothing in `origin/` is jurisdiction-specific. |
+| **D11** | `reuse: false` is enforced, not decorative: a compiled pack can be granted **once**. Binding a second consent for the same pack raises 409 `reuse_forbidden`, even after revoke or expiry — sharing again needs a fresh compile, which returns to the farmer. Auto-delivery compiles a new pack per request, so standing policies are unaffected. | — |
 
 ## Superseded, for the record
 
