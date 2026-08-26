@@ -6,6 +6,8 @@ Origin is built for the [All Things Agentic Hackathon](https://allthingsagentich
 
 > Capture once. Share only on your terms. See every action.
 
+**Live demo:** [origin-farm-agent.onrender.com](https://origin-farm-agent.onrender.com) · **API health:** [origin-api-n4v5i2jtda-ew.a.run.app/health](https://origin-api-n4v5i2jtda-ew.a.run.app/health)
+
 ## The problem
 
 Farmers repeatedly enter the same spray, harvest, and compliance facts into different partner portals. The work is tedious, but blindly automating it would be unsafe: a new recipient, purpose, field, or expiry must return control to the farmer.

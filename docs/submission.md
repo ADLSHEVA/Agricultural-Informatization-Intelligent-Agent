@@ -26,7 +26,7 @@ Farmers repeatedly enter the same field records into co-op, elevator, retailer, 
 - [x] Under-four-minute demo script
 - [x] Gemini and Google Cloud integration identified in code and documentation
 - [x] Durable `AgentRun` and external action visible in the product
-- [ ] Public deployed application URL
+- [x] Public deployed application URL
 - [ ] Public or unlisted demo video URL
 - [ ] Devpost team and member details
 - [ ] Final Devpost category/bonus selections
@@ -35,7 +35,7 @@ Farmers repeatedly enter the same field records into co-op, elevator, retailer, 
 
 | Proof | Value to insert |
 |---|---|
-| Web URL | `TBD after Render service creation` |
+| Web URL | `https://origin-farm-agent.onrender.com` |
 | API health URL | `https://origin-api-n4v5i2jtda-ew.a.run.app/health` |
 | Cloud Run region | `europe-west1` |
 | Cloud Tasks queue | `origin-agent` |
