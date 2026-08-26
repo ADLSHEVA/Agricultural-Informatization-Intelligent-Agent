@@ -10,8 +10,8 @@ const sans = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Origin",
-  description: "You originated it. You decide who uses it.",
+  title: "Origin · Farmer-controlled AI agent",
+  description: "Capture a farm fact once. Let a bounded AI agent share only what the farmer approved.",
   manifest: "/manifest.json",
 };
 

@@ -42,6 +42,18 @@ export default function ConsentPage() {
   }
 
   const talk = c?.plain_talk;
+  const packFields = Object.entries(c?.pack_fields ?? {}) as Array<[string, any]>;
+  const labels: Record<string, string> = {
+    parcel_id: "Field",
+    date: "Date",
+    product_name: "Product",
+    rate: "Rate",
+    unit: "Unit",
+    buffer_m: "Filter strip",
+    buffer_ok: "Filter-strip check",
+    gaec4_buffer_ok: "GAEC 4 check",
+  };
+  const shown = (value: any) => (typeof value === "boolean" ? (value ? "Pass" : "Fail") : String(value ?? "—"));
   return (
     <>
       <div className="page-head">
@@ -79,12 +91,27 @@ export default function ConsentPage() {
           </div>
         </section>
       )}
+      {packFields.length > 0 && (
+        <section className="card">
+          <h2>Exactly what will leave Origin</h2>
+          <div className="field-table">
+            {packFields.map(([name, value]) => (
+              <p key={name}>
+                <span>{labels[name] || name.replace(/_/g, " ")}</span>
+                <strong>{shown(value)}</strong>
+              </p>
+            ))}
+          </div>
+          <p className="muted">Yield and revenue are not in this pack.</p>
+        </section>
+      )}
       {err && <p className="bad">{err}</p>}
       <label className="card standing">
         <input type="checkbox" checked={standing} onChange={(e) => setStanding(e.target.checked)} />
         <span>
-          Do this automatically next time for {c?.partner_name ?? "this elevator"} this crop year. Origin
-          will send the same kind of spray statement without asking again. You can revoke anytime.
+          Allow automatic delivery to {c?.partner_name ?? "this elevator"} for {String(c?.purpose ?? "this purpose").replace(/_/g, " ")},
+          only for {packFields.map(([name]) => labels[name] || name).join(", ") || "the fields above"}, through {c?.until ?? "the stated date"}.
+          Any new purpose or extra field comes back to me. I can pause future access at any time.
         </span>
       </label>
       <div className="row">

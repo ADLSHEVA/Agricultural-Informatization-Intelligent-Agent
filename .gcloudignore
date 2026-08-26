@@ -1,0 +1,13 @@
+# The root Cloud Build is only for the Next.js image.
+**
+!.gcloudignore
+!apps/
+!apps/web/
+!apps/web/**
+!deploy/
+!deploy/cloudbuild-web.yaml
+
+apps/web/node_modules/
+apps/web/.next/
+apps/web/.env*
+apps/web/tsconfig.tsbuildinfo

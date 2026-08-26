@@ -313,6 +313,78 @@ span:has(> input[type="file"]) {
   align-items: flex-start;
 }
 
+.field-table {
+  display: grid;
+  grid-template-columns: 1fr;
+  border-top: 1px solid var(--line);
+  margin: 0.8rem 0;
+}
+.field-table p {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.field-table span { color: var(--grey); }
+.field-table strong { text-align: right; overflow-wrap: anywhere; }
+
+.activity { margin-top: 2rem; }
+.section-head,
+.run-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.section-head h2,
+.activity > h2 { margin: 0 0 0.25rem; }
+.run-head p { margin: 0.2rem 0 0; }
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: #ece9e0;
+  color: var(--grey);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.status-completed { background: var(--accent-soft); color: var(--ok); }
+.status-failed { background: #f8e4e1; color: var(--bad); }
+.status-running,
+.status-queued { background: #e5ecf5; color: #294d73; }
+.status-waiting_for_farmer { background: #fff0c7; color: #72500a; }
+.timeline {
+  list-style: none;
+  margin: 1rem 0 0.85rem;
+  padding: 0 0 0 0.9rem;
+  border-left: 2px solid var(--line);
+}
+.timeline li {
+  display: grid;
+  gap: 0.1rem;
+  position: relative;
+  padding: 0 0 0.85rem 0.9rem;
+}
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li::before {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  left: -1.18rem;
+  top: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.timeline strong { font-size: 0.92rem; text-transform: capitalize; }
+.timeline span { color: var(--grey); font-size: 0.9rem; }
+.provenance { border-left: 4px solid var(--accent); }
+
 @media (min-width: 800px) {
   :root { --gutter: 5vw; --work: min(90vw, var(--work-cap)); }
   .topbar { padding: 0.75rem var(--gutter); }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, type RuleDraft } from "@/lib/api";
+import { api, type AgentRun, type RuleDraft } from "@/lib/api";
 import { BigButton } from "@/components/BigButton";
 import { UncontrolledFile } from "@/components/UncontrolledFile";
 
@@ -38,10 +38,13 @@ export default function DeskPage() {
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
   const [draft, setDraft] = useState<RuleDraft | null>(null);
+  const [runs, setRuns] = useState<AgentRun[]>([]);
 
   async function load() {
     try {
-      setRows(await api.deskPacks());
+      const [packs, activity] = await Promise.all([api.deskPacks(), api.deskRuns()]);
+      setRows(packs);
+      setRuns(activity);
     } catch (e: any) {
       setErr(e.message);
     }
@@ -50,6 +53,12 @@ export default function DeskPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!runs.some((run) => run.status === "queued" || run.status === "running")) return;
+    const timer = window.setTimeout(() => void load(), 1500);
+    return () => window.clearTimeout(timer);
+  }, [runs]);
 
   async function sendQuestionnaire() {
     if (!text.trim() && !file) {
@@ -71,6 +80,31 @@ export default function DeskPage() {
       setErr(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function askFarm(purpose?: string) {
+    setAsking(true);
+    setErr("");
+    setMsg("");
+    try {
+      const res = await api.deskRequest("demo-farm", purpose);
+      const decision = res?.agent?.decision;
+      const reason = res?.agent?.reason_code;
+      setMsg(
+        reason === "new_purpose"
+          ? "Boundary held — the changed purpose is waiting for the grower's approval. Nothing was sent."
+          : decision === "auto_deliver"
+            ? "Asked again — Origin handled the current spray statement under standing permission."
+            : res?.run?.status === "queued"
+              ? `Background run queued — ${res.run.trace_id}.`
+              : "Asked the farm. Waiting on the grower.",
+      );
+      await load();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAsking(false);
     }
   }
 
@@ -121,30 +155,15 @@ export default function DeskPage() {
       <h2>Current files</h2>
       {err && <p className="bad">{err}</p>}
       {msg && <p className="ok">{msg}</p>}
+      <BigButton kind="ghost" disabled={asking} onClick={() => askFarm()}>
+        {asking ? "Asking…" : "Ask the farm again"}
+      </BigButton>
       <BigButton
         kind="ghost"
         disabled={asking}
-        onClick={async () => {
-          setAsking(true);
-          setErr("");
-          setMsg("");
-          try {
-            const res = await api.deskRequest();
-            const decision = res?.agent?.decision;
-            setMsg(
-              decision === "auto_deliver"
-                ? "Asked again — Origin sent the current spray statement under standing permission."
-                : "Asked the farm. Waiting on the grower.",
-            );
-            await load();
-          } catch (e: any) {
-            setErr(e.message);
-          } finally {
-            setAsking(false);
-          }
-        }}
+        onClick={() => askFarm("carbon_practice_statement")}
       >
-        {asking ? "Asking…" : "Ask the farm again"}
+        Boundary test: change purpose
       </BigButton>
       {rows.length === 0 && !asking && <p className="muted">No file from this farm yet.</p>}
       {rows.map((r) => {
@@ -165,6 +184,11 @@ export default function DeskPage() {
                   {until ? " · " : ""}
                   Yield and revenue are not in this file.
                 </p>
+                {r.delivery && (
+                  <p className="ok">
+                    Delivery: {r.delivery.status} · {(r.delivery.destinations || []).join(" · ")}
+                  </p>
+                )}
               </>
             )}
           </section>
@@ -172,6 +196,31 @@ export default function DeskPage() {
       })}
       </div>
       </div>
+
+      {runs.length > 0 && (
+        <section className="activity">
+          <h2>Background runs</h2>
+          {runs.slice(0, 5).map((run) => (
+            <article className="card run-card" key={run.id}>
+              <div className="run-head">
+                <div>
+                  <strong>{run.decision?.replace(/_/g, " ") || "Routing request"}</strong>
+                  <p className="muted">Trace {run.trace_id}</p>
+                </div>
+                <span className={`status status-${run.status}`}>{run.status.replace(/_/g, " ")}</span>
+              </div>
+              <ol className="timeline">
+                {(run.steps ?? []).map((step, index) => (
+                  <li key={`${step.name}-${index}`}>
+                    <strong>{step.name.replace(/_/g, " ")}</strong>
+                    <span>{step.detail}</span>
+                  </li>
+                ))}
+              </ol>
+            </article>
+          ))}
+        </section>
+      )}
     </>
   );
 }

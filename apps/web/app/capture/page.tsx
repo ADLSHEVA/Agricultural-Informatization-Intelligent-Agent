@@ -8,6 +8,7 @@ import { UncontrolledFile } from "@/components/UncontrolledFile";
 
 type Draft = {
   id: string;
+  time: string;
   parcel_id: string;
   product_name: string;
   rate: number | null;
@@ -15,6 +16,7 @@ type Draft = {
   buffer_m: number | null;
   note: string;
   confidence: number;
+  provenance: Record<string, any>;
 };
 
 export default function CapturePage() {
@@ -76,6 +78,7 @@ export default function CapturePage() {
       const ev = await api.postEvent(form);
       setDraft({
         id: ev.id,
+        time: ev.time,
         parcel_id: ev.parcel_id || parcel,
         product_name: ev.product_name ?? "",
         rate: ev.rate ?? null,
@@ -83,6 +86,7 @@ export default function CapturePage() {
         buffer_m: ev.buffer_m ?? null,
         note: ev.note ?? "",
         confidence: ev.confidence ?? 0,
+        provenance: ev.provenance ?? {},
       });
     } catch (e: any) {
       setErr(e.message);
@@ -103,6 +107,10 @@ export default function CapturePage() {
         note: draft.note,
         parcel_id: draft.parcel_id,
       });
+      if (res.saved_only) {
+        router.push("/?saved=1");
+        return;
+      }
       router.push(res.auto ? "/receipts" : `/consent/${res.consent.id}`);
     } catch (e: any) {
       setErr(e.message);
@@ -134,6 +142,10 @@ export default function CapturePage() {
               </select>
             </div>
             <div>
+              <label>Date and time</label>
+              <input value={draft.time ? new Date(draft.time).toLocaleString() : ""} readOnly />
+            </div>
+            <div>
               <label>Product</label>
               <input
                 value={draft.product_name ?? ""}
@@ -150,6 +162,13 @@ export default function CapturePage() {
               />
             </div>
             <div>
+              <label>Unit</label>
+              <input
+                value={draft.unit ?? ""}
+                onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
+              />
+            </div>
+            <div>
               <label>Buffer (m)</label>
               <input
                 type="number"
@@ -159,6 +178,18 @@ export default function CapturePage() {
               />
             </div>
           </div>
+        </section>
+        <section className="card provenance">
+          <h2>How this draft was read</h2>
+          <p>
+            <strong>{draft.provenance?.mode === "vertex" ? "Vertex AI" : "Deterministic fallback"}</strong>
+            {draft.provenance?.model ? ` · ${draft.provenance.model}` : ""}
+            {draft.provenance?.location ? ` · ${draft.provenance.location}` : ""}
+          </p>
+          <p className="muted">
+            Extraction confidence: {Math.round((draft.confidence ?? 0) * 100)}%. The derived filter-strip
+            check is deterministic and will be shown on the consent card before anything is shared.
+          </p>
         </section>
         {err && <p className="bad">{err}</p>}
         <div className="actions">

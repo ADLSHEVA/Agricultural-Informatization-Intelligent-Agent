@@ -132,7 +132,14 @@ def _buffer_field(rule: dict) -> str | None:
     return None
 
 
-def compile_event(event: EventRecord, parcel: Parcel, rule_id: str = DEFAULT_RULE) -> PackRecord:
+def compile_event(
+    event: EventRecord,
+    parcel: Parcel,
+    rule_id: str = DEFAULT_RULE,
+    *,
+    requested_fields: list[str] | None = None,
+    purpose: str | None = None,
+) -> PackRecord:
     """YAML + geometry only. Gemini never runs here."""
     rule = load_rule(rule_id)
     source = {
@@ -145,10 +152,20 @@ def compile_event(event: EventRecord, parcel: Parcel, rule_id: str = DEFAULT_RUL
         "yield": None,
         "revenue": None,
     }
+    rule_fields = list(rule["fields"])
+    requested = set(requested_fields if requested_fields is not None else rule_fields)
+    # A request can ask for a subset of its approved rule pack, never for a
+    # field the rule does not carry. The API creates requests from that rule;
+    # this second boundary keeps imported/stale records conservative too.
+    requested &= set(rule_fields)
     buffer_field = _buffer_field(rule)
-    fields = {key: source.get(key) for key in rule["fields"] if key not in BUFFER_KEYS}
+    fields = {
+        key: source.get(key)
+        for key in rule_fields
+        if key in requested and key not in BUFFER_KEYS
+    }
     checks = {}
-    if buffer_field:
+    if buffer_field and buffer_field in requested:
         checks = buffer_ok(parcel, event.buffer_m)
         fields[buffer_field] = checks["buffer_ok"]
     for banned in rule.get("exclude", []):
@@ -160,7 +177,7 @@ def compile_event(event: EventRecord, parcel: Parcel, rule_id: str = DEFAULT_RUL
         event_ids=[event.id],
         rule_id=rule["id"],
         partner_id=rule["partner"],
-        purpose=rule["purpose"],
+        purpose=purpose or rule["purpose"],
         fields=fields,
         checks=checks,
         created_at=datetime.now(timezone.utc),

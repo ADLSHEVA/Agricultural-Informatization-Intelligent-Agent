@@ -14,16 +14,33 @@ LIVE = {"purpose-bound"}
 
 
 def issue(consent: ConsentRecord) -> tuple[TokenRecord, ReceiptRecord]:
-    token = TokenRecord(
-        id=f"tok-{uuid4().hex[:12]}",
-        consent_id=consent.id,
-        farm_id=consent.farm_id,
-        partner_id=consent.partner_id,
-        expires_at=datetime.combine(consent.until, datetime.max.time()).replace(tzinfo=timezone.utc),
-        revoked=False,
+    tokens = store.list_where("tokens", consent_id=consent.id)
+    token = (
+        store.as_token(tokens[0])
+        if tokens
+        else TokenRecord(
+            id=f"tok-{uuid4().hex[:12]}",
+            consent_id=consent.id,
+            farm_id=consent.farm_id,
+            partner_id=consent.partner_id,
+            expires_at=datetime.combine(consent.until, datetime.max.time()).replace(
+                tzinfo=timezone.utc
+            ),
+            revoked=False,
+        )
     )
-    store.put("tokens", token.id, token.model_dump(mode="json"))
-    receipt = _receipt(consent, kind="given", grey=False)
+    if not tokens:
+        store.put("tokens", token.id, token.model_dump(mode="json"))
+    receipts = [
+        row
+        for row in store.list_where("receipts", consent_id=consent.id)
+        if row.get("kind") == "given"
+    ]
+    receipt = (
+        store.as_receipt(receipts[0])
+        if receipts
+        else _receipt(consent, kind="given", grey=False)
+    )
     return token, receipt
 
 
@@ -64,7 +81,11 @@ def _is_live(consent: ConsentRecord) -> bool:
 
 
 def find_live_consent(
-    farm_id: str, partner_id: str, purpose: str, event_id: str
+    farm_id: str,
+    partner_id: str,
+    purpose: str,
+    event_id: str,
+    requested_fields: list[str] | None = None,
 ) -> tuple[ConsentRecord, dict, dict] | None:
     """An open file that already covers exactly this fact?
 
@@ -79,6 +100,8 @@ def find_live_consent(
             continue
         pack = store.get("packs", row.get("pack_id") or "")
         if not pack or event_id not in (pack.get("event_ids") or []):
+            continue
+        if requested_fields and not set(requested_fields) <= set(pack.get("fields") or {}):
             continue
         c = store.as_consent(row)
         if expire_if_due(c).state != "purpose-bound":

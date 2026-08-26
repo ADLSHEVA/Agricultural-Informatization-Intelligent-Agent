@@ -1,0 +1,53 @@
+digraph OriginHackathon {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    pad="0.35",
+    nodesep="0.55",
+    ranksep="0.8",
+    fontname="Arial",
+    label="Origin — Google Taskmaster architecture\nPolicy-constrained background action for farm-data requests",
+    labelloc="t",
+    fontsize=22
+  ];
+  node [shape=box, style="rounded,filled", fontname="Arial", fontsize=12, margin="0.18,0.12", color="#65705f"];
+  edge [fontname="Arial", fontsize=10, color="#536158", arrowsize=0.75];
+
+  Farmer [label="Farmer\nvoice · photo · approval", fillcolor="#fff4cf"];
+  Partner [label="Partner system\nrequest · webhook / inbox", fillcolor="#dfeefa"];
+
+  subgraph cluster_gcp {
+    label="Google Cloud";
+    color="#6f59b5";
+    style="rounded,filled";
+    fillcolor="#f4f0ff";
+    fontname="Arial";
+    fontsize=15;
+
+    Web [label="origin-web\nNext.js · Cloud Run", fillcolor="#ffffff"];
+    Api [label="origin-api\nFastAPI · Cloud Run", fillcolor="#ffffff"];
+    Tasks [label="Cloud Tasks\nasync dispatch · retry", fillcolor="#e8ddff"];
+    Worker [label="AgentRun worker\nroute · resume · recover", fillcolor="#f8e6ef"];
+    Gemini [label="Gemini 3.7 Flash\nVertex AI · multimodal reading", fillcolor="#e1f1ff"];
+    Guard [label="Deterministic safety gate\nYAML scope · consent · geometry", fillcolor="#e4f2e5"];
+    Firestore [label="Firestore\nruns · state · receipts", fillcolor="#fff1dc"];
+    Storage [label="Cloud Storage\nevidence · partner inbox", fillcolor="#fff1dc"];
+    Logs [label="Cloud Logging\ntrace ID · model metadata", fillcolor="#eeeeee"];
+  }
+
+  Farmer -> Web [label="capture / decide"];
+  Partner -> Api [label="request event"];
+  Web -> Api [label="HTTPS"];
+  Api -> Tasks [label="create AgentRun"];
+  Tasks -> Worker [label="authenticated task"];
+  Worker -> Gemini [label="read / phrase"];
+  Worker -> Guard [label="route action"];
+  Guard -> Firestore [label="persist state"];
+  Gemini -> Firestore [label="provenance"];
+  Worker -> Storage [label="deliver minimal pack"];
+  Storage -> Partner [label="partner inbox"];
+  Worker -> Partner [label="optional signed webhook"];
+  Worker -> Logs [label="same trace ID"];
+  Firestore -> Web [label="status timeline"];
+  Guard -> Web [label="ask only on boundary"];
+}

@@ -9,6 +9,7 @@ ConsentState = Literal["draft", "purpose-bound", "refused", "expired", "revoked"
 EventStatus = Literal["draft", "confirmed"]
 RuleDraftState = Literal["proposed", "approved", "rejected"]
 Role = Literal["farmer", "partner"]
+RunStatus = Literal["queued", "running", "waiting_for_farmer", "completed", "failed"]
 
 
 class PlainTalk(BaseModel):
@@ -28,6 +29,7 @@ class FarmEventDraft(BaseModel):
     buffer_m: float | None = None
     note: str = ""
     confidence: float = 0.0
+    provenance: dict = Field(default_factory=dict)
 
 
 class EventRecord(BaseModel):
@@ -45,6 +47,7 @@ class EventRecord(BaseModel):
     source: Literal["voice", "photo", "import", "note"] = "note"
     status: EventStatus = "draft"
     confidence: float = 0.0
+    provenance: dict = Field(default_factory=dict)
 
 
 class PackRecord(BaseModel):
@@ -84,6 +87,8 @@ class ReceiptRecord(BaseModel):
     # Stable grouping key for the Who page; empty on rows written before it
     # existed (the UI falls back to partner_name for those).
     partner_id: str = ""
+    purpose: str = ""
+    until: date | None = None
     pack_hash: str
     field_list: list[str]
     issued_at: datetime
@@ -110,6 +115,34 @@ class PartnerRequest(BaseModel):
     rule_id: str = "elevator_spray_statement_v1"
     status: Literal["open", "linked", "superseded"] = "open"
     created_at: datetime
+
+
+class AgentRun(BaseModel):
+    """Durable execution record for one event-driven partner request.
+
+    The trace is intentionally farmer-readable: it proves what ran in the
+    background without exposing model chain-of-thought.
+    """
+
+    id: str
+    trace_id: str
+    request_id: str
+    farm_id: str
+    partner_id: str
+    trigger: str = "partner_request"
+    status: RunStatus = "queued"
+    decision: str | None = None
+    reason_code: str | None = None
+    consent_id: str | None = None
+    pack_id: str | None = None
+    delivery_id: str | None = None
+    attempts: int = 0
+    queue_task: str | None = None
+    model: dict = Field(default_factory=dict)
+    steps: list[dict] = Field(default_factory=list)
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class Parcel(BaseModel):

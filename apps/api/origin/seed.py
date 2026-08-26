@@ -44,6 +44,7 @@ def ensure_demo() -> None:
             req["status"] = "superseded"
             store.put("requests", req["id"], req)
     if not store.list_where("requests", farm_id="demo-farm", status="open"):
+        created_at = datetime.now(timezone.utc).isoformat()
         store.put(
             "requests",
             "req-demo-open",
@@ -53,9 +54,56 @@ def ensure_demo() -> None:
                 "partner_id": "heartland-grain",
                 "partner_name": "Heartland Grain LLC",
                 "purpose": "seasonal_spray_statement",
-                "field_list": ["parcel_id", "date", "product_name", "rate", "unit", "buffer_m"],
+                "field_list": [
+                    "parcel_id",
+                    "date",
+                    "product_name",
+                    "rate",
+                    "unit",
+                    "buffer_m",
+                    "buffer_ok",
+                ],
                 "rule_id": "elevator_spray_statement_v1",
                 "status": "open",
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": created_at,
+            },
+        )
+    seed_request = store.get("requests", "req-demo-open")
+    if (
+        seed_request
+        and seed_request.get("status") == "open"
+        and not store.list_where("agent_runs", request_id="req-demo-open")
+    ):
+        now = datetime.now(timezone.utc).isoformat()
+        store.put(
+            "agent_runs",
+            "run-demo-open",
+            {
+                "id": "run-demo-open",
+                "trace_id": "trc-demo-request",
+                "request_id": "req-demo-open",
+                "farm_id": "demo-farm",
+                "partner_id": "heartland-grain",
+                "trigger": "seeded_partner_request",
+                "status": "waiting_for_farmer",
+                "decision": "need_capture",
+                "reason_code": "need_capture",
+                "attempts": 0,
+                "steps": [
+                    {
+                        "name": "request_received",
+                        "status": "completed",
+                        "detail": "Partner request persisted before execution.",
+                        "at": now,
+                    },
+                    {
+                        "name": "human_boundary",
+                        "status": "waiting",
+                        "detail": "A confirmed field fact is required before the request can continue.",
+                        "at": now,
+                    },
+                ],
+                "created_at": now,
+                "updated_at": now,
             },
         )

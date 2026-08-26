@@ -66,8 +66,24 @@ export type TermsReview = {
   created_at: string;
 };
 
+export type AgentRun = {
+  id: string;
+  trace_id: string;
+  request_id: string;
+  status: "queued" | "running" | "waiting_for_farmer" | "completed" | "failed";
+  decision?: string | null;
+  reason_code?: string | null;
+  delivery_id?: string | null;
+  model?: Record<string, any>;
+  steps: Array<{ name: string; status: string; detail: string; at: string }>;
+  created_at: string;
+  updated_at: string;
+  error?: string | null;
+};
+
 export const api = {
   today: () => req("/v1/today"),
+  agentRuns: () => req("/v1/agent-runs") as Promise<AgentRun[]>,
   postEvent: (form: FormData) => req("/v1/events", { method: "POST", body: form }),
   confirmEvent: (id: string, body: Record<string, unknown>) =>
     req(`/v1/events/${id}/confirm`, { method: "POST", body: JSON.stringify(body) }),
@@ -80,8 +96,13 @@ export const api = {
   exportMe: () => req("/v1/me/export"),
   eraseMe: () => req("/v1/me", { method: "DELETE" }),
   deskPacks: () => req("/v1/desk/packs", {}, PARTNER_TOKEN),
-  deskRequest: (farmId = "demo-farm") =>
-    req("/v1/desk/requests", { method: "POST", body: JSON.stringify({ farm_id: farmId }) }, PARTNER_TOKEN),
+  deskRequest: (farmId = "demo-farm", purpose?: string) =>
+    req(
+      "/v1/desk/requests",
+      { method: "POST", body: JSON.stringify({ farm_id: farmId, ...(purpose ? { purpose } : {}) }) },
+      PARTNER_TOKEN,
+    ),
+  deskRuns: () => req("/v1/desk/agent-runs", {}, PARTNER_TOKEN) as Promise<AgentRun[]>,
   deskQuestionnaire: (form: FormData) =>
     req("/v1/desk/questionnaires", { method: "POST", body: form }, PARTNER_TOKEN) as Promise<RuleDraft>,
   ruleDrafts: () => req("/v1/rule-drafts") as Promise<RuleDraft[]>,

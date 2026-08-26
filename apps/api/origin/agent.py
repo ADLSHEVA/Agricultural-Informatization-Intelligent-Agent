@@ -35,8 +35,8 @@ def default_rule_for_farm(farm: dict | None) -> str:
     """Pick a pack by where the farm is. The only jurisdiction test in the code.
 
     Everything else about a market lives in the YAML. An unknown country reads
-    as EU: this is an EU hackathon, and the EU pack is the one whose framing
-    (GAEC 4, GDPR) is safe to show a farmer we cannot place.
+    as EU because its pack has the more conservative sharing defaults; the
+    Google hackathon demo itself uses the seeded US farm.
     """
     country = str((farm or {}).get("country") or "").upper()
     return rule_for_market("US" if country == "US" else "EU")
@@ -51,6 +51,9 @@ def default_rule_for(partner_id: str, farm: dict | None = None) -> str:
 
 
 def activate_standing(bound: ConsentRecord) -> StandingPolicy:
+    existing = store.list_where("policies", created_from_consent_id=bound.id)
+    if existing:
+        return store.as_policy(existing[0])
     policy = StandingPolicy(
         id=f"pol-{uuid4().hex[:10]}",
         farm_id=bound.farm_id,
@@ -64,6 +67,20 @@ def activate_standing(bound: ConsentRecord) -> StandingPolicy:
     )
     store.put("policies", policy.id, policy.model_dump(mode="json"))
     return policy
+
+
+def revoke_standing_for(consent: ConsentRecord) -> None:
+    """Revoking current access also closes the matching automation boundary."""
+    for row in store.list_where(
+        "policies",
+        farm_id=consent.farm_id,
+        partner_id=consent.partner_id,
+    ):
+        if row.get("purpose") != consent.purpose:
+            continue
+        if row.get("state") in {"active", "paused"}:
+            row["state"] = "revoked"
+            store.put("policies", row["id"], row)
 
 
 def match_standing(
@@ -245,7 +262,9 @@ def tick_request(req: PartnerRequest) -> dict:
 
     # A card for exactly this fact may already be waiting on the farmer. Reuse
     # it — a second ask must not stack another pack and draft in the wallet.
-    pending = consent.find_open_draft(req.farm_id, req.partner_id, req.purpose, event.id)
+    pending = consent.find_open_draft(
+        req.farm_id, req.partner_id, req.purpose, event.id, req.field_list
+    )
     if pending is not None:
         _link(req.id)
         return _write_log(
@@ -272,7 +291,9 @@ def tick_request(req: PartnerRequest) -> dict:
 
     # A live file compiled from this same event may already cover the ask.
     # Re-delivering would bind an identical consent, token and receipt.
-    live = deliver.find_live_consent(req.farm_id, req.partner_id, req.purpose, event.id)
+    live = deliver.find_live_consent(
+        req.farm_id, req.partner_id, req.purpose, event.id, req.field_list
+    )
     if live is not None:
         existing, pack_row, token = live
         _link(req.id)
@@ -298,7 +319,13 @@ def tick_request(req: PartnerRequest) -> dict:
             }
         ) | {"mode": "auto", "consent": existing}
 
-    pack = compile_event(event, store.as_parcel(parcel_row), rule_id=rule_id)
+    pack = compile_event(
+        event,
+        store.as_parcel(parcel_row),
+        rule_id=rule_id,
+        requested_fields=req.field_list,
+        purpose=req.purpose,
+    )
     result = fulfill_pack(pack=pack, request_id=req.id, locale=locale)
     if result.get("mode") in {"auto", "ask"}:
         _link(req.id)

@@ -37,11 +37,29 @@ class Settings(BaseSettings):
 
     # --- storage --------------------------------------------------------------
     store: str = "json"  # json | firestore
+    firestore_prefix: str = "origin"
     bucket: str = ""  # GCS bucket for evidence; empty => local files
+
+    # --- event-driven agent --------------------------------------------------
+    # inline keeps local development and tests self-contained. Cloud Tasks
+    # makes partner requests return immediately while a retryable worker runs.
+    agent_dispatch: str = "inline"  # inline | tasks
+    tasks_location: str = "europe-west1"
+    tasks_queue: str = "origin-agent"
+    api_base_url: str = ""
+    task_service_account: str = ""
+    internal_token: str = ""
+
+    # Optional real partner destination. Cloud Storage delivery is enabled by
+    # `bucket`; this webhook adds an integration with the partner's own system.
+    partner_webhook_url: str = ""
+    partner_webhook_secret: str = ""
+    max_upload_bytes: int = Field(10_000_000, gt=0, le=100_000_000)
 
     # --- auth -----------------------------------------------------------------
     firebase_project_id: str = ""
     demo_tokens: bool = True
+    seed_demo: bool = True
 
     # --- web ------------------------------------------------------------------
     # Comma-separated. Both loopback spellings by default: the browser sends

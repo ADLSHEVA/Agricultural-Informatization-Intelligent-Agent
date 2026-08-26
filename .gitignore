@@ -4,12 +4,32 @@ apps/api/.pytest_cache/
 apps/web/node_modules/
 apps/web/.next/
 apps/web/tsconfig.tsbuildinfo
+.venv/
+venv/
+dist/
+build/
+.coverage
+coverage/
+htmlcov/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.vercel/
+.firebase/
 .codegraph/
 .claude/
 .pytest_cache/
 *.pyc
 .env
 .env.local
+.env.*
+!**/.env.example
+*.pem
+*.key
+service-account*.json
+credentials*.json
 
 # local working notes — not published
 description_proj.txt
@@ -18,4 +38,10 @@ Origin-*.txt
 docs/*
 !docs/decisions.md
 !docs/frontend-backend.md
+!docs/architecture.md
+!docs/architecture.dot
+!docs/architecture.png
+!docs/architecture.svg
+!docs/demo-script.md
+!docs/submission.md
 

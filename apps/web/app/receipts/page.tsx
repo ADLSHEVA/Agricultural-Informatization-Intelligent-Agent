@@ -11,13 +11,15 @@ type Group = {
   latest: any;
   earlier: number;
   liveIds: string[];
+  purpose: string;
 };
 
 function groupReceipts(rows: any[]): Group[] {
   const map = new Map<string, any[]>();
   for (const r of rows) {
     // partner_id is stable; older rows predate it and fall back to the name.
-    const key = r.partner_id || r.partner_name || r.consent_id;
+    const partner = r.partner_id || r.partner_name || r.consent_id;
+    const key = `${partner}:${r.purpose || "unspecified"}`;
     const list = map.get(key) ?? [];
     list.push(r);
     map.set(key, list);
@@ -32,6 +34,7 @@ function groupReceipts(rows: any[]): Group[] {
       latest,
       earlier: Math.max(0, list.length - 1),
       liveIds: list.filter((r) => r.kind === "given" && !r.grey).map((r) => r.consent_id),
+      purpose: latest.purpose || "unspecified purpose",
     });
   }
   groups.sort((a, b) => String(b.latest.issued_at || "").localeCompare(String(a.latest.issued_at || "")));
@@ -82,12 +85,17 @@ export default function ReceiptsPage() {
   }
 
   async function erase() {
-    if (!confirm("Erase stored facts and evidence? Receipts stay as stubs.")) return;
+    if (
+      !confirm(
+        "Erase facts and evidence stored by Origin? Hash-only receipt stubs remain, and recipient deletion notices are recorded separately.",
+      )
+    )
+      return;
     setBusy(true);
     try {
       await api.eraseMe();
       await load();
-      setMsg("Erased. Tokens are dead.");
+      setMsg("Origin's stored copy was erased. Future access is blocked; recipient notices were recorded.");
     } finally {
       setBusy(false);
     }
@@ -110,18 +118,29 @@ export default function ReceiptsPage() {
             <section key={g.key} className={`card ${r.grey ? "greyed" : ""}`}>
               <h2>{g.partner_name}</h2>
               <p className="muted">
-                {r.kind === "refused" ? "You said no" : "You shared"} · {r.field_list?.join(", ")}
+                {r.kind === "refused" ? "You said no" : "You shared"} · {g.purpose.replace(/_/g, " ")}
               </p>
+              <p>{r.field_list?.join(", ") || "Hash-only receipt"}</p>
               <p className="muted">
                 {r.issued_at}
+                {r.until ? ` · access through ${r.until}` : ""}
                 {g.earlier > 0 ? ` · ${g.earlier} earlier ${g.earlier === 1 ? "time" : "times"}` : ""}
               </p>
+              {r.delivery?.status && (
+                <p className="muted">
+                  Delivery {r.delivery.status} · {(r.delivery.destinations || []).join(" · ")}
+                </p>
+              )}
               {g.liveIds.length > 0 && (
                 <BigButton kind="danger" disabled={busy} onClick={() => revokeAll(g.liveIds)}>
                   {busy ? "Revoking…" : "Revoke"}
                 </BigButton>
               )}
-              {g.liveIds.length === 0 && <p className="ok">They can no longer open this file.</p>}
+              {g.liveIds.length === 0 && (
+                <p className="ok">
+                  Future access through Origin is blocked. Previously exported copies require recipient confirmation.
+                </p>
+              )}
             </section>
           );
         })}
@@ -131,10 +150,10 @@ export default function ReceiptsPage() {
           Read their terms
         </BigButton>
         <BigButton kind="ghost" onClick={exp}>
-          Export my data
+          Export Origin's copy
         </BigButton>
         <BigButton kind="danger" onClick={erase}>
-          Erase my data
+          Erase Origin's copy
         </BigButton>
       </div>
     </>

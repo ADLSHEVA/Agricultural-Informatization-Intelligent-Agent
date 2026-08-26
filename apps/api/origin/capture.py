@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import get_args
 from uuid import uuid4
 
-from origin import store
+from origin import blobs, store
 from origin.gemini_router import extract_event
 from origin.models import EventRecord, FarmEventDraft
 
@@ -39,19 +38,26 @@ def create_draft(
     )
     event_id = f"evt-{uuid4().hex[:10]}"
     evidence: list[str] = []
-    # Read DATA_DIR off the store module at call time, not import time: tests
-    # repoint store.DATA_DIR at a tmp dir, and this file must follow.
-    ev_dir = store.DATA_DIR / "evidence" / farm_id / event_id
     if audio:
-        ev_dir.mkdir(parents=True, exist_ok=True)
-        path = ev_dir / "audio.webm"
-        path.write_bytes(audio)
-        evidence.append(str(path))
+        evidence.append(
+            blobs.save_evidence(
+                farm_id=farm_id,
+                event_id=event_id,
+                filename="audio.webm",
+                data=audio,
+                content_type=audio_mime,
+            )
+        )
     if image:
-        ev_dir.mkdir(parents=True, exist_ok=True)
-        path = ev_dir / "label.jpg"
-        path.write_bytes(image)
-        evidence.append(str(path))
+        evidence.append(
+            blobs.save_evidence(
+                farm_id=farm_id,
+                event_id=event_id,
+                filename="label.jpg",
+                data=image,
+                content_type=image_mime,
+            )
+        )
 
     parcel = draft.parcel_ref or parcel_id
     if parcel.isdigit():
@@ -74,6 +80,7 @@ def create_draft(
         source=source,  # type: ignore[arg-type]
         status="draft",
         confidence=draft.confidence,
+        provenance=draft.provenance,
     )
     store.put("events", event.id, event.model_dump(mode="json"))
     return event
@@ -101,9 +108,4 @@ def confirm(event: EventRecord, **patch) -> EventRecord:
 
 
 def wipe_evidence(farm_id: str) -> None:
-    root = store.DATA_DIR / "evidence" / farm_id
-    if not root.exists():
-        return
-    for path in root.rglob("*"):
-        if path.is_file():
-            path.unlink()
+    blobs.wipe_evidence(farm_id)

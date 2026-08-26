@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file=apps/web/Dockerfile
+      - --build-arg=NEXT_PUBLIC_API_URL=${_API_URL}
+      - --build-arg=NEXT_PUBLIC_DEMO_MODE=true
+      - --tag=${_IMAGE}
+      - apps/web
+images:
+  - ${_IMAGE}
+options:
+  logging: CLOUD_LOGGING_ONLY

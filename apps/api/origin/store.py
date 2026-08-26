@@ -44,7 +44,21 @@ def _empty() -> dict[str, Any]:
         "rule_drafts": {},
         "rule_packs": {},
         "terms_reviews": {},
+        "agent_runs": {},
+        "deliveries": {},
+        "llm_calls": {},
     }
+
+
+def _firestore():
+    """Return the lazy cloud adapter when Firestore is selected."""
+    from origin.config import settings
+
+    if settings().store.lower() != "firestore":
+        return None
+    from origin import store_firestore
+
+    return store_firestore
 
 
 def _load() -> dict[str, Any]:
@@ -61,11 +75,18 @@ def _save(db: dict[str, Any]) -> None:
 
 
 def snapshot() -> dict[str, Any]:
+    cloud = _firestore()
+    if cloud:
+        return cloud.snapshot()
     with _lock:
         return _load()
 
 
 def put(collection: str, item_id: str, payload: dict[str, Any]) -> None:
+    cloud = _firestore()
+    if cloud:
+        cloud.put(collection, item_id, payload)
+        return
     with _lock:
         db = _load()
         db.setdefault(collection, {})[item_id] = payload
@@ -73,11 +94,18 @@ def put(collection: str, item_id: str, payload: dict[str, Any]) -> None:
 
 
 def get(collection: str, item_id: str) -> dict[str, Any] | None:
+    cloud = _firestore()
+    if cloud:
+        return cloud.get(collection, item_id)
     with _lock:
         return _load().get(collection, {}).get(item_id)
 
 
 def delete(collection: str, item_id: str) -> None:
+    cloud = _firestore()
+    if cloud:
+        cloud.delete(collection, item_id)
+        return
     with _lock:
         db = _load()
         db.get(collection, {}).pop(item_id, None)
@@ -85,6 +113,9 @@ def delete(collection: str, item_id: str) -> None:
 
 
 def list_where(collection: str, **equals: Any) -> list[dict[str, Any]]:
+    cloud = _firestore()
+    if cloud:
+        return cloud.list_where(collection, **equals)
     with _lock:
         rows = list(_load().get(collection, {}).values())
     out = []
@@ -95,6 +126,10 @@ def list_where(collection: str, **equals: Any) -> list[dict[str, Any]]:
 
 
 def replace_all(db: dict[str, Any]) -> None:
+    cloud = _firestore()
+    if cloud:
+        cloud.replace_all(db)
+        return
     with _lock:
         _save(db)
 

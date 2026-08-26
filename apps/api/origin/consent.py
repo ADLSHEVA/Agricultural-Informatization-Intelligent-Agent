@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from origin import store
-from origin.compile import load_rule
+from origin.compile import BUFFER_KEYS, load_rule
 from origin.gemini_router import explain_consent
 from origin.models import ConsentRecord, PackRecord, PlainTalk, ReceiptRecord
 
@@ -70,6 +70,11 @@ def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> 
 
 
 def bind(consent: ConsentRecord) -> ConsentRecord:
+    # A lost HTTP response may cause the same consent to be submitted again.
+    # Returning the already-bound record is safe; a *different* consent for the
+    # same non-reusable pack is still rejected below.
+    if consent.state == "purpose-bound":
+        return consent
     if consent.state != "draft":
         raise HTTPException(409, {"code": "invalid_state", "message": f"Cannot bind from {consent.state}"})
     if not consent.reuse:
@@ -137,6 +142,8 @@ def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
         pack_id=consent.pack_id,
         partner_name=consent.partner_name,
         partner_id=consent.partner_id,
+        purpose=consent.purpose,
+        until=consent.until,
         pack_hash=digest,
         field_list=consent.fields,
         issued_at=datetime.now(timezone.utc),
@@ -148,7 +155,11 @@ def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
 
 
 def find_open_draft(
-    farm_id: str, partner_id: str, purpose: str, event_id: str
+    farm_id: str,
+    partner_id: str,
+    purpose: str,
+    event_id: str,
+    requested_fields: list[str] | None = None,
 ) -> ConsentRecord | None:
     """A draft already waiting on the farmer for this same fact?
 
@@ -161,7 +172,13 @@ def find_open_draft(
         if row.get("purpose") != purpose:
             continue
         pack = store.get("packs", row.get("pack_id") or "")
-        if pack and event_id in (pack.get("event_ids") or []):
+        actual = set((pack or {}).get("fields") or {}) - set(BUFFER_KEYS)
+        requested = set(requested_fields or actual) - set(BUFFER_KEYS)
+        if (
+            pack
+            and event_id in (pack.get("event_ids") or [])
+            and actual == requested
+        ):
             return store.as_consent(row)
     return None
 

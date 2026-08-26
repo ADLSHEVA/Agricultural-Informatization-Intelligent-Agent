@@ -15,9 +15,11 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from datetime import date
 from functools import lru_cache
 from typing import Any
+from uuid import uuid4
 
 from origin.config import settings
 from origin.models import FarmEventDraft, PlainTalk
@@ -28,6 +30,59 @@ log = logging.getLogger("origin.llm")
 logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 
 _calls: dict[str, int] = {}
+_trace_id: ContextVar[str] = ContextVar("origin_trace_id", default="")
+_last_provenance: ContextVar[dict] = ContextVar("origin_model_provenance", default={})
+
+
+def begin_trace(trace_id: str):
+    """Attach model calls to an AgentRun without exposing private reasoning."""
+    return _trace_id.set(trace_id)
+
+
+def end_trace(token) -> None:
+    _trace_id.reset(token)
+
+
+def last_provenance() -> dict:
+    return dict(_last_provenance.get())
+
+
+def _record_provenance(label: str, *, mode: str, reason: str = "", usage=None) -> dict:
+    s = settings()
+    payload = {
+        "mode": mode,
+        "provider": "Vertex AI" if mode == "vertex" else "deterministic fallback",
+        "model": s.gemini_model if mode == "vertex" else "none",
+        "location": s.vertex_location if mode == "vertex" else "local",
+        "label": label,
+        "reason": reason,
+        "prompt_tokens": getattr(usage, "prompt_token_count", None),
+        "output_tokens": getattr(usage, "candidates_token_count", None),
+        "total_tokens": getattr(usage, "total_token_count", None),
+        "trace_id": _trace_id.get(),
+    }
+    _last_provenance.set(payload)
+    log.info(
+        "model_provenance trace_id=%s label=%s mode=%s model=%s location=%s reason=%s",
+        payload["trace_id"] or "unscoped",
+        label,
+        mode,
+        payload["model"],
+        payload["location"],
+        reason or "none",
+    )
+    if payload["trace_id"]:
+        from datetime import datetime, timezone
+
+        from origin import store
+
+        call_id = f"llm-{uuid4().hex[:10]}"
+        store.put(
+            "llm_calls",
+            call_id,
+            {"id": call_id, "at": datetime.now(timezone.utc).isoformat(), **payload},
+        )
+    return payload
 
 
 @lru_cache(maxsize=4)
@@ -69,13 +124,18 @@ def _budget_ok() -> bool:
 def _generate(parts: list[Any], *, label: str) -> str | None:
     """One call site for every model request. Returns None on any failure."""
     client = _client()
-    if client is None or not _budget_ok():
+    if client is None:
+        _record_provenance(label, mode="fallback", reason="vertex_unavailable")
+        return None
+    if not _budget_ok():
+        _record_provenance(label, mode="fallback", reason="daily_call_cap")
         return None
     s = settings()
     try:
         resp = client.models.generate_content(model=s.gemini_model, contents=parts)
     except Exception as exc:
         log.warning("%s failed on %s @ %s: %s", label, s.gemini_model, s.vertex_location, exc)
+        _record_provenance(label, mode="fallback", reason=type(exc).__name__)
         return None
     usage = getattr(resp, "usage_metadata", None)
     log.info(
@@ -87,6 +147,7 @@ def _generate(parts: list[Any], *, label: str) -> str | None:
         getattr(usage, "candidates_token_count", "?"),
         getattr(usage, "total_token_count", "?"),
     )
+    _record_provenance(label, mode="vertex", usage=usage)
     return resp.text or None
 
 
@@ -108,7 +169,8 @@ def extract_event(
     """Read voice / photo / note into a draft event. On failure return a sparse
     draft for the farmer to fix — the farmer is always the source of truth."""
     if _client() is None:
-        return _heuristic(note, parcel_hint)
+        _record_provenance("extract_event", mode="fallback", reason="vertex_unavailable")
+        return _heuristic(note, parcel_hint).model_copy(update={"provenance": last_provenance()})
 
     from google.genai import types
 
@@ -130,11 +192,14 @@ def extract_event(
 
     raw = _generate(parts, label="extract_event")
     if raw is None:
-        return _heuristic(note, parcel_hint)
+        return _heuristic(note, parcel_hint).model_copy(update={"provenance": last_provenance()})
     try:
-        return FarmEventDraft.model_validate(_parse_json(raw))
+        return FarmEventDraft.model_validate(_parse_json(raw)).model_copy(
+            update={"provenance": last_provenance()}
+        )
     except Exception:
-        return _heuristic(note, parcel_hint)
+        _record_provenance("extract_event", mode="fallback", reason="invalid_model_json")
+        return _heuristic(note, parcel_hint).model_copy(update={"provenance": last_provenance()})
 
 
 def explain_consent(
@@ -149,6 +214,7 @@ def explain_consent(
     """Phrase the five-line consent card in the farmer's own language."""
     fallback = _plain_fallback(partner_name, purpose, fields, until, reuse, locale)
     if _client() is None:
+        _record_provenance("explain_consent", mode="fallback", reason="vertex_unavailable")
         return fallback
 
     prompt = (
@@ -194,6 +260,7 @@ def narrate_decision(
         locale=locale,
     )
     if _client() is None:
+        _record_provenance("narrate_decision", mode="fallback", reason="vertex_unavailable")
         return fallback
 
     prompt = (
@@ -330,6 +397,7 @@ def draft_rule_pack(
     """
     fallback = _questionnaire_heuristic(text, partner_hint, market)
     if _client() is None:
+        _record_provenance("draft_rule_pack", mode="fallback", reason="vertex_unavailable")
         return fallback
 
     from google.genai import types
@@ -371,6 +439,7 @@ def digest_terms(*, text: str, partner_hint: str = "", locale: str = "en") -> di
     """
     fallback = _terms_heuristic(text, partner_hint, locale)
     if _client() is None:
+        _record_provenance("digest_terms", mode="fallback", reason="vertex_unavailable")
         return fallback
 
     prompt = (
