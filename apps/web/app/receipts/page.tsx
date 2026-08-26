@@ -47,7 +47,9 @@ export default function ReceiptsPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const sharedDemo = process.env.NEXT_PUBLIC_SHARED_DEMO === "true";
+  const sharedDemo =
+    process.env.NEXT_PUBLIC_SHARED_DEMO !== "false" &&
+    process.env.NEXT_PUBLIC_DEMO_MODE !== "false";
 
   async function load() {
     try {
