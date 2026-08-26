@@ -16,6 +16,7 @@ htmlcov/
 Thumbs.db
 .idea/
 .vscode/
+.tools/
 .vercel/
 .firebase/
 .codegraph/
@@ -44,4 +45,5 @@ docs/*
 !docs/architecture.svg
 !docs/demo-script.md
 !docs/submission.md
+!docs/ux-research.md
 

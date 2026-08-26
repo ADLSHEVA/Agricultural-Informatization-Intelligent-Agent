@@ -14,7 +14,7 @@
 <g id="clust2" class="cluster">
 <title>cluster_web</title>
 <path fill="#fffde7" stroke="#f9a825" stroke-width="1.8" d="M911.34,-436.84C911.34,-436.84 1629.34,-436.84 1629.34,-436.84 1635.34,-436.84 1641.34,-442.84 1641.34,-448.84 1641.34,-448.84 1641.34,-538.84 1641.34,-538.84 1641.34,-544.84 1635.34,-550.84 1629.34,-550.84 1629.34,-550.84 911.34,-550.84 911.34,-550.84 905.34,-550.84 899.34,-544.84 899.34,-538.84 899.34,-538.84 899.34,-448.84 899.34,-448.84 899.34,-442.84 905.34,-436.84 911.34,-436.84"/>
-<text xml:space="preserve" text-anchor="middle" x="1270.34" y="-534.49" font-family="Helvetica,sans-Serif" font-size="13.00">apps/web &#160;· &#160;TypeScript &#160;· &#160;origin&#45;web (Cloud Run, min=0)</text>
+<text xml:space="preserve" text-anchor="middle" x="1270.34" y="-534.49" font-family="Helvetica,sans-Serif" font-size="13.00">apps/web &#160;· &#160;TypeScript &#160;· &#160;origin&#45;web (Render, Frankfurt)</text>
 </g>
 <g id="clust4" class="cluster">
 <title>cluster_api</title>

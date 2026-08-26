@@ -51,16 +51,17 @@ export default function TermsPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Read their terms</h1>
+        <p className="eyebrow">Plain-language check</p>
+        <h1>Understand their data terms.</h1>
         <p className="muted">
-          This is a reading, not consent. Origin will not share anything from this screen.{" "}
+          Gemini highlights resale, retention, third parties, and fields claimed. This is a reading, not consent; nothing is shared from this screen.{" "}
           <Link href="/receipts">Back to Who</Link>
         </p>
       </div>
 
       <div className="split">
         <section className="card">
-          <h2>The clause</h2>
+          <h2>Paste the clause you received</h2>
           <label htmlFor="partner">Who sent this</label>
           <input id="partner" value={partner} onChange={(e) => setPartner(e.target.value)} />
           <label htmlFor="clause">Paste it</label>
@@ -76,7 +77,7 @@ export default function TermsPage() {
               Paste a sample resale clause
             </BigButton>
             <BigButton disabled={busy} onClick={review}>
-              {busy ? "Reading…" : "Say it plainly"}
+              {busy ? "Reading…" : "Explain these terms"}
             </BigButton>
           </div>
           {err && <p className="bad">{err}</p>}
@@ -115,8 +116,9 @@ export default function TermsPage() {
           </section>
         ) : (
           <section className="card placeholder">
-            <h2>Plain reading</h2>
-            <p>Paste their clause. Origin will say what they are asking for, in farm language.</p>
+            <p className="eyebrow">Result</p>
+            <h2>Your plain-language reading appears here</h2>
+            <p>Origin will show what they can do with the data, how long they keep it, and whether the request exceeds your boundary.</p>
           </section>
         )}
       </div>

@@ -120,8 +120,10 @@ digraph FRAMEWORK {
     { rank=same; EventStore; Evidence; RulePack; Wallet; Adapter }
   }
 
+  WebRun [shape=box, style="filled,bold", fillcolor="#FFF8E1", label="origin-web\nTypeScript · responsive Next.js\nRender · Frankfurt"]
+
   subgraph cluster_gcp {
-    label="Google Cloud  ·  services europe-west1  ·  two Cloud Run services  ·  min=0"
+    label="Google Cloud  ·  agent and data plane  ·  europe-west1  ·  min=0"
     fontname="Helvetica"
     fontsize=13
     style="rounded,filled"
@@ -130,7 +132,6 @@ digraph FRAMEWORK {
     penwidth=1.6
     margin=14
 
-    WebRun [shape=box, style="filled,bold", fillcolor="#FFF8E1", label="origin-web\nTypeScript · Next.js PWA\nCloud Run min=0"]
     ApiRun [shape=box, style="filled,bold", fillcolor="#E3F2FD", label="origin-api\nPython 3.12 · FastAPI\nCloud Run min=0"]
     Fire   [shape=box, style="filled", fillcolor="#FFFFFF", label="Firestore\nevents · packs · consents"]
     Gcs    [shape=box, style="filled", fillcolor="#FFFFFF", label="Cloud Storage\nevidence · photos\n30-day lifecycle"]
@@ -138,7 +139,7 @@ digraph FRAMEWORK {
     Adc    [shape=box, style="filled", fillcolor="#FFFFFF", label="ADC / Service Account\nroles/aiplatform.user\nno API key anywhere"]
     Gemini [shape=box, style="filled,dashed,bold", fillcolor="#E1BEE7", label="Vertex AI Gemini\ngemini-3.7-flash · Flash tier only, never Pro\nreads and phrases · never decides\ninference location: global (europe-west1 optional)\ndaily call cap · billing budget"]
 
-    { rank=same; WebRun; ApiRun; Fire; Gcs; Auth; Adc; Gemini }
+    { rank=same; ApiRun; Fire; Gcs; Auth; Adc; Gemini }
     WebRun -> ApiRun [arrowhead=normal, label="HTTPS + JWT\nOpenAPI"]
     Auth -> ApiRun   [arrowhead=odot, style=dashed, label="requires"]
     Adc  -> Gemini   [arrowhead=odot, style=dashed, label="authenticates"]

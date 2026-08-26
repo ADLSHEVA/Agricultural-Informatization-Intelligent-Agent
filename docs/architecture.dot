@@ -15,6 +15,7 @@ digraph OriginHackathon {
 
   Farmer [label="Farmer\nvoice · photo · approval", fillcolor="#fff4cf"];
   Partner [label="Partner system\nrequest · webhook / inbox", fillcolor="#dfeefa"];
+  Web [label="origin-web\nNext.js · Render", fillcolor="#ffffff"];
 
   subgraph cluster_gcp {
     label="Google Cloud";
@@ -24,7 +25,6 @@ digraph OriginHackathon {
     fontname="Arial";
     fontsize=15;
 
-    Web [label="origin-web\nNext.js · Cloud Run", fillcolor="#ffffff"];
     Api [label="origin-api\nFastAPI · Cloud Run", fillcolor="#ffffff"];
     Tasks [label="Cloud Tasks\nasync dispatch · retry", fillcolor="#e8ddff"];
     Worker [label="AgentRun worker\nroute · resume · recover", fillcolor="#f8e6ef"];

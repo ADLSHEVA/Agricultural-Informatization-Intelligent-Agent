@@ -3,7 +3,7 @@
   "short_name": "Origin",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6efd8",
-  "theme_color": "#e6b000",
+  "background_color": "#f3f2e9",
+  "theme_color": "#176b47",
   "description": "A farmer-controlled AI agent for safe, traceable data sharing."
 }

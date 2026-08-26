@@ -1,6 +1,6 @@
 # Origin demo script
 
-Target length: **3:20**. Record the deployed Cloud Run application in a desktop browser. Keep the Partner Desk in a second tab.
+Target length: **3:20**. Record the deployed Render web application in a desktop browser. Keep the Partner Desk in a second tab.
 
 ## 0:00–0:25 — Problem and promise
 
@@ -50,13 +50,13 @@ Show the erase wording without erasing the seeded demo unless a reset is availab
 
 Show `docs/architecture.png` or place it as a final video slide.
 
-> The web and API run on Cloud Run; Cloud Tasks drives durable AgentRuns; Firestore stores state; Cloud Storage holds evidence and deliveries; and Gemini runs on Vertex AI. Origin turns AI automation into accountable delegation: capture once, share only on your terms, and see every action.
+> The responsive web experience runs on Render. The agent API runs on Cloud Run; Cloud Tasks drives durable AgentRuns; Firestore stores state; Cloud Storage holds evidence and deliveries; and Gemini runs on Vertex AI. Origin turns AI automation into accountable delegation: capture once, share only on your terms, and see every action.
 
 ## Recording checklist
 
 - Confirm the deployed API health response reports `firestore`, `tasks`, and the Vertex model.
-- Pre-warm both Cloud Run services before recording.
+- Pre-warm the Render web service and Cloud Run API before recording.
 - Use a fresh seeded data prefix or reset state before each take.
 - Keep browser zoom at 100% and hide bookmarks or private account details.
-- Show the URL briefly as proof of a Cloud Run deployment.
+- Show the Render URL and API health response briefly as deployment proof.
 - Keep the final video below four minutes.

@@ -57,11 +57,14 @@ export default function ConsentPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Give or refuse</h1>
+        <p className="eyebrow">Approval checkpoint</p>
+        <h1>Review this share.</h1>
+        <p className="muted">Nothing leaves Origin until you approve the recipient, purpose, and exact values below.</p>
         {!talk && <p className="muted">Loading…</p>}
       </div>
       {talk && (
         <section className="card">
+          <h2>Request details</h2>
           <div className="facts">
             <p>
               <strong>Who</strong>
@@ -92,7 +95,7 @@ export default function ConsentPage() {
         </section>
       )}
       {packFields.length > 0 && (
-        <section className="card">
+        <section className="card provenance">
           <h2>Exactly what will leave Origin</h2>
           <div className="field-table">
             {packFields.map(([name, value]) => (
@@ -102,24 +105,25 @@ export default function ConsentPage() {
               </p>
             ))}
           </div>
-          <p className="muted">Yield and revenue are not in this pack.</p>
+          <p className="exclusion-note">Yield and revenue are excluded. They will not be sent with this pack.</p>
         </section>
       )}
       {err && <p className="bad">{err}</p>}
       <label className="card standing">
         <input type="checkbox" checked={standing} onChange={(e) => setStanding(e.target.checked)} />
         <span>
-          Allow automatic delivery to {c?.partner_name ?? "this elevator"} for {String(c?.purpose ?? "this purpose").replace(/_/g, " ")},
-          only for {packFields.map(([name]) => labels[name] || name).join(", ") || "the fields above"}, through {c?.until ?? "the stated date"}.
-          Any new purpose or extra field comes back to me. I can pause future access at any time.
+          <strong>Save this exact boundary for routine repeats</strong>
+          <br />
+          Allow {c?.partner_name ?? "this elevator"} to receive only {packFields.map(([name]) => labels[name] || name).join(", ") || "the fields above"}
+          for {String(c?.purpose ?? "this purpose").replace(/_/g, " ")} through {c?.until ?? "the stated date"}. A new purpose, recipient, or field always comes back to me.
         </span>
       </label>
       <div className="row">
         <BigButton disabled={busy || !c} onClick={give}>
-          Give
+          {busy ? "Working…" : "Approve and share"}
         </BigButton>
         <BigButton kind="ghost" disabled={busy || !c} onClick={refuse}>
-          Refuse
+          Do not share
         </BigButton>
       </div>
     </>

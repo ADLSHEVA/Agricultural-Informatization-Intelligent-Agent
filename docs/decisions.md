@@ -41,10 +41,11 @@ Last updated: **26 August 2026**. When another document conflicts with this file
 
 | ID | Decision |
 |---|---|
-| D16 | Production uses Cloud Run, Cloud Tasks, Firestore, Cloud Storage, Vertex AI, and Cloud Logging. The local profile uses JSON and local blobs. |
+| D16 | Production serves the responsive Next.js web app on Render; the agent and data plane use Cloud Run, Cloud Tasks, Firestore, Cloud Storage, Vertex AI, and Cloud Logging. The local profile uses JSON and local blobs. |
 | D17 | Firebase ID-token verification is supported for production; explicit demo principals remain available only when `ORIGIN_DEMO_TOKENS=true`. |
 | D18 | Gemini 3.7 Flash is the default model and may be overridden through `ORIGIN_GEMINI_MODEL`. `global` is the default Vertex location; a regional location may be selected when model availability and residency needs require it. |
 | D19 | Apache-2.0 is the repository license. |
+| D20 | Origin is one responsive web product, not a separate native mobile app. Farmer capture is touch-friendly; consent review and the Partner Desk are progressively desktop-oriented. |
 
 ## Non-goals for this submission
 

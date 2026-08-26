@@ -109,17 +109,27 @@ export default function DeskPage() {
   }
 
   const refused = draft?.refused_fields?.length ? draft.refused_fields : draft?.dropped_refused ?? [];
+  const activeFiles = rows.filter((row) => !row.grey).length;
+  const waitingRuns = runs.filter((run) => run.status === "waiting_for_farmer").length;
 
   return (
     <>
       <div className="page-head">
-        <h1>Elevator desk</h1>
-        <p className="muted">Ask for a spray statement, or send a questionnaire. The grower still decides.</p>
+        <p className="eyebrow">Partner operations</p>
+        <h1>Grower data requests.</h1>
+        <p className="muted">Request the minimum compliance record from Riverside Farms. The grower's permission boundary is enforced automatically.</p>
       </div>
+
+      <section className="signal-grid" aria-label="Partner request status">
+        <div className="signal"><span className="signal-number">{activeFiles}</span><span><small>Current files</small><strong>Available to your team</strong></span></div>
+        <div className="signal"><span className={`signal-dot ${waitingRuns ? "attention" : "safe"}`} /><span><small>Grower review</small><strong>{waitingRuns ? `${waitingRuns} waiting` : "Nothing waiting"}</strong></span></div>
+        <div className="signal"><span className="signal-dot live" /><span><small>Delivery</small><strong>Traceable and scoped</strong></span></div>
+      </section>
 
       <div className="desk-grid">
       <section className="card">
-        <h2>Send a questionnaire</h2>
+        <p className="eyebrow">New intake</p>
+        <h2>Send a compliance questionnaire</h2>
         <p className="muted">
           Origin turns this into a draft pack. The grower still has to approve it. Yield and revenue never
           survive.
@@ -152,18 +162,18 @@ export default function DeskPage() {
       </section>
 
       <div>
-      <h2>Current files</h2>
+      <div className="section-title"><div><p className="eyebrow">Inbox</p><h2>Current grower files</h2></div></div>
       {err && <p className="bad">{err}</p>}
       {msg && <p className="ok">{msg}</p>}
       <BigButton kind="ghost" disabled={asking} onClick={() => askFarm()}>
-        {asking ? "Asking…" : "Ask the farm again"}
+        {asking ? "Requesting…" : "Request current spray statement"}
       </BigButton>
       <BigButton
         kind="ghost"
         disabled={asking}
         onClick={() => askFarm("carbon_practice_statement")}
       >
-        Boundary test: change purpose
+        Demo safety stop: change purpose
       </BigButton>
       {rows.length === 0 && !asking && <p className="muted">No file from this farm yet.</p>}
       {rows.map((r) => {

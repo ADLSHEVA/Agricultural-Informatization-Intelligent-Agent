@@ -8,6 +8,7 @@ hackathon demo from unrelated data in the same project.
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 from typing import Any
 
 COLLECTIONS = (
@@ -46,13 +47,40 @@ def _collection(name: str):
     return _client().collection(f"{prefix}_{name}")
 
 
+def _to_firestore(payload: dict[str, Any]) -> dict[str, Any]:
+    """Encode values Firestore cannot represent without changing app models.
+
+    Firestore rejects arrays nested directly inside arrays. GeoJSON Polygon
+    coordinates require exactly that shape, so keep the complete geometry as a
+    compact JSON string inside a tagged map and restore it on every read.
+    """
+    encoded = dict(payload)
+    geom = encoded.get("geom")
+    if isinstance(geom, dict):
+        encoded["geom"] = {
+            "encoding": "geojson",
+            "value": json.dumps(geom, separators=(",", ":")),
+        }
+    return encoded
+
+
+def _from_firestore(payload: dict[str, Any]) -> dict[str, Any]:
+    decoded = dict(payload)
+    geom = decoded.get("geom")
+    if isinstance(geom, dict) and geom.get("encoding") == "geojson":
+        value = geom.get("value")
+        if isinstance(value, str):
+            decoded["geom"] = json.loads(value)
+    return decoded
+
+
 def put(collection: str, item_id: str, payload: dict[str, Any]) -> None:
-    _collection(collection).document(item_id).set(payload)
+    _collection(collection).document(item_id).set(_to_firestore(payload))
 
 
 def get(collection: str, item_id: str) -> dict[str, Any] | None:
     snap = _collection(collection).document(item_id).get()
-    return snap.to_dict() if snap.exists else None
+    return _from_firestore(snap.to_dict()) if snap.exists else None
 
 
 def delete(collection: str, item_id: str) -> None:
@@ -65,12 +93,12 @@ def list_where(collection: str, **equals: Any) -> list[dict[str, Any]]:
     query = _collection(collection)
     for field, value in equals.items():
         query = query.where(filter=FieldFilter(field, "==", value))
-    return [snap.to_dict() for snap in query.stream()]
+    return [_from_firestore(snap.to_dict()) for snap in query.stream()]
 
 
 def snapshot() -> dict[str, Any]:
     return {
-        name: {snap.id: snap.to_dict() for snap in _collection(name).stream()}
+        name: {snap.id: _from_firestore(snap.to_dict()) for snap in _collection(name).stream()}
         for name in COLLECTIONS
     }
 

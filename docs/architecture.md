@@ -4,6 +4,7 @@
 
 Origin separates ambiguity from authority:
 
+- Render serves one responsive Next.js application: touch-friendly farmer capture in the field and a desktop-first Partner Desk in the office. The browser holds no Google Cloud credentials.
 - Gemini 3.7 Flash on Vertex AI reads voice, photos, questionnaires, and phrases short explanations.
 - The deterministic gate alone decides whether a share is covered by the farmer's standing permission. It checks partner, purpose, field containment, expiry, and field geometry.
 - Every partner request becomes an `AgentRun` before execution. Cloud Tasks dispatches it asynchronously and retries failures; the local profile runs the same lifecycle inline.

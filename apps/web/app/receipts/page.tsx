@@ -102,20 +102,31 @@ export default function ReceiptsPage() {
   }
 
   const groups = groupReceipts(rows);
+  const activeShares = groups.filter((group) => group.liveIds.length > 0).length;
 
   return (
     <>
       <div className="page-head">
-        <h1>Who has it</h1>
+        <p className="eyebrow">Your data trail</p>
+        <h1>Sharing and access.</h1>
+        <p className="muted">See who received farm data, why they received it, and whether future access is still open.</p>
         {err && <p className="bad">{err}</p>}
         {msg && <p className="ok">{msg}</p>}
         {groups.length === 0 && <p className="muted">No shares yet.</p>}
       </div>
+      {groups.length > 0 && (
+        <section className="signal-grid" aria-label="Sharing summary">
+          <div className="signal"><span className="signal-number">{groups.length}</span><span><small>Recipients</small><strong>In your audit trail</strong></span></div>
+          <div className="signal"><span className={`signal-dot ${activeShares ? "attention" : "safe"}`} /><span><small>Future access</small><strong>{activeShares ? `${activeShares} active` : "All blocked"}</strong></span></div>
+          <div className="signal"><span className="signal-dot live" /><span><small>Portable copy</small><strong>Ready to export</strong></span></div>
+        </section>
+      )}
       <div className="card-grid">
         {groups.map((g) => {
           const r = g.latest;
           return (
             <section key={g.key} className={`card ${r.grey ? "greyed" : ""}`}>
+              <span className="task-label">{g.liveIds.length > 0 ? "Access active" : "Access closed"}</span>
               <h2>{g.partner_name}</h2>
               <p className="muted">
                 {r.kind === "refused" ? "You said no" : "You shared"} · {g.purpose.replace(/_/g, " ")}
@@ -133,7 +144,7 @@ export default function ReceiptsPage() {
               )}
               {g.liveIds.length > 0 && (
                 <BigButton kind="danger" disabled={busy} onClick={() => revokeAll(g.liveIds)}>
-                  {busy ? "Revoking…" : "Revoke"}
+                  {busy ? "Revoking…" : "Stop future access"}
                 </BigButton>
               )}
               {g.liveIds.length === 0 && (
@@ -145,9 +156,13 @@ export default function ReceiptsPage() {
           );
         })}
       </div>
-      <div className="actions">
+      <section className="card">
+        <p className="eyebrow">Your copy</p>
+        <h2>Portability and deletion</h2>
+        <p className="muted">Export a machine-readable copy at any time. Erasing Origin's copy also blocks future access, but cannot silently remove files a recipient already downloaded.</p>
+        <div className="actions">
         <BigButton kind="ghost" onClick={() => router.push("/terms")}>
-          Read their terms
+          Check partner terms
         </BigButton>
         <BigButton kind="ghost" onClick={exp}>
           Export Origin's copy
@@ -155,7 +170,8 @@ export default function ReceiptsPage() {
         <BigButton kind="danger" onClick={erase}>
           Erase Origin's copy
         </BigButton>
-      </div>
+        </div>
+      </section>
     </>
   );
 }

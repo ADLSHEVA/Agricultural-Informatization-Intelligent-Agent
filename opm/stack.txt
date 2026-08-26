@@ -1,5 +1,5 @@
 // Origin stack architecture — TypeScript web + Python API
-// English labels. Two Cloud Run services, Gemini only on the API.
+// English labels. Render web, Google Cloud agent/data plane, Gemini only on the API.
 
 digraph STACK {
   graph [
@@ -24,7 +24,7 @@ digraph STACK {
   { rank=same; Farmer; Partner }
 
   subgraph cluster_web {
-    label="apps/web  ·  TypeScript  ·  origin-web (Cloud Run, min=0)"
+    label="apps/web  ·  TypeScript  ·  origin-web (Render, Frankfurt)"
     fontname="Helvetica"
     fontsize=13
     style="rounded,filled"

@@ -16,7 +16,7 @@ Most consent products ask once and most agents act broadly. Origin converts cons
 
 ## Suggested project description
 
-Farmers repeatedly enter the same field records into co-op, elevator, retailer, and certification portals. Origin captures a fact once from voice, photo, or text, has the farmer confirm Gemini's structured draft, and compiles only the fields a partner actually requested. Each request becomes a durable AgentRun dispatched by Cloud Tasks. A deterministic policy gate—not the model—checks recipient, purpose, exact field containment, and expiry. Covered repeats are delivered idempotently to Cloud Storage or a signed webhook; anything new pauses for a field/value-level consent decision. Firestore holds the run timeline, permissions, receipts, and provenance, while Cloud Run hosts the Next.js experience and FastAPI agent. Farmers can see what happened, revoke Origin-issued access, export their data, or erase Origin's copy with honest recipient notices. Origin shows how agentic automation can remain useful, observable, and accountable in a high-trust domain.
+Farmers repeatedly enter the same field records into co-op, elevator, retailer, and certification portals. Origin captures a fact once from voice, photo, or text, has the farmer confirm Gemini's structured draft, and compiles only the fields a partner actually requested. Each request becomes a durable AgentRun dispatched by Cloud Tasks. A deterministic policy gate—not the model—checks recipient, purpose, exact field containment, and expiry. Covered repeats are delivered idempotently to Cloud Storage or a signed webhook; anything new pauses for a field/value-level consent decision. Firestore holds the run timeline, permissions, receipts, and provenance, Cloud Run hosts the FastAPI agent, and Render serves the responsive Next.js experience. Farmers can see what happened, revoke Origin-issued access, export their data, or erase Origin's copy with honest recipient notices. Origin shows how agentic automation can remain useful, observable, and accountable in a high-trust domain.
 
 ## Required assets
 
@@ -35,9 +35,9 @@ Farmers repeatedly enter the same field records into co-op, elevator, retailer, 
 
 | Proof | Value to insert |
 |---|---|
-| Web URL | `TBD` |
-| API health URL | `TBD/health` |
-| Cloud Run region | `europe-west1` by default |
+| Web URL | `TBD after Render service creation` |
+| API health URL | `https://origin-api-n4v5i2jtda-ew.a.run.app/health` |
+| Cloud Run region | `europe-west1` |
 | Cloud Tasks queue | `origin-agent` |
 | Firestore database | `(default)` |
 | Storage bucket | project-specific, not public |

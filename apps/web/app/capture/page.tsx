@@ -6,6 +6,8 @@ import { api } from "@/lib/api";
 import { BigButton } from "@/components/BigButton";
 import { UncontrolledFile } from "@/components/UncontrolledFile";
 
+const LOCAL_DRAFT_KEY = "origin-field-note-draft";
+
 type Draft = {
   id: string;
   time: string;
@@ -32,8 +34,22 @@ export default function CapturePage() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+  const [savedLocally, setSavedLocally] = useState(false);
 
   useEffect(() => {
+    try {
+      const cached = window.localStorage.getItem(LOCAL_DRAFT_KEY);
+      if (cached) {
+        const saved = JSON.parse(cached);
+        if (typeof saved.note === "string") setNote(saved.note);
+        if (typeof saved.parcel === "string") setParcel(saved.parcel);
+      }
+    } catch {
+      // Private browsing can disable storage. Capture still works normally.
+    } finally {
+      setDraftReady(true);
+    }
     api
       .today()
       .then((t) => {
@@ -42,7 +58,22 @@ export default function CapturePage() {
       .catch(() => undefined);
   }, []);
 
-  async function startHold() {
+  useEffect(() => {
+    if (!draftReady) return;
+    try {
+      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({ note, parcel }));
+      setSavedLocally(Boolean(note.trim()));
+    } catch {
+      setSavedLocally(false);
+    }
+  }, [draftReady, note, parcel]);
+
+  async function toggleRecording() {
+    if (holding) {
+      rec.current?.stop();
+      setHolding(false);
+      return;
+    }
     setErr("");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -57,16 +88,15 @@ export default function CapturePage() {
       mr.start();
       setHolding(true);
     } catch {
-      setErr("Mic blocked — type the three facts below instead.");
+      setErr("Microphone access is blocked. Type the field, product, rate, and buffer below instead.");
     }
   }
 
-  function stopHold() {
-    rec.current?.stop();
-    setHolding(false);
-  }
-
   async function send() {
+    if (!note.trim() && !audio && !image) {
+      setErr("Add a voice note, photo, or typed note first.");
+      return;
+    }
     setBusy(true);
     setErr("");
     try {
@@ -76,6 +106,12 @@ export default function CapturePage() {
       if (audio) form.set("audio", audio, "voice.webm");
       if (image) form.set("image", image);
       const ev = await api.postEvent(form);
+      try {
+        window.localStorage.removeItem(LOCAL_DRAFT_KEY);
+      } catch {
+        // The server copy is authoritative once extraction succeeds.
+      }
+      setSavedLocally(false);
       setDraft({
         id: ev.id,
         time: ev.time,
@@ -123,8 +159,9 @@ export default function CapturePage() {
     return (
       <>
         <div className="page-head">
-          <h1>Is this right?</h1>
-          <p className="muted">Fix at most a few words. You are the source of truth.</p>
+          <p className="eyebrow">Review before saving</p>
+          <h1>Check the field record.</h1>
+          <p className="muted">Gemini prepared this draft. Correct anything it misheard—you are the source of truth.</p>
         </div>
         <section className="card">
           <div className="fields-2">
@@ -180,21 +217,21 @@ export default function CapturePage() {
           </div>
         </section>
         <section className="card provenance">
-          <h2>How this draft was read</h2>
+          <h2>How Origin read this</h2>
           <p>
             <strong>{draft.provenance?.mode === "vertex" ? "Vertex AI" : "Deterministic fallback"}</strong>
             {draft.provenance?.model ? ` · ${draft.provenance.model}` : ""}
             {draft.provenance?.location ? ` · ${draft.provenance.location}` : ""}
           </p>
           <p className="muted">
-            Extraction confidence: {Math.round((draft.confidence ?? 0) * 100)}%. The derived filter-strip
-            check is deterministic and will be shown on the consent card before anything is shared.
+            Extraction confidence: {Math.round((draft.confidence ?? 0) * 100)}%. Filter-strip compliance is
+            checked by deterministic rules and shown before anything can be shared.
           </p>
         </section>
         {err && <p className="bad">{err}</p>}
         <div className="actions">
           <BigButton disabled={busy} onClick={confirm}>
-            That’s right
+            {busy ? "Saving…" : "Confirm field record"}
           </BigButton>
         </div>
       </>
@@ -204,30 +241,35 @@ export default function CapturePage() {
   return (
     <>
       <div className="page-head">
-        <h1>Speak or snap</h1>
-        <p className="muted">Hold to talk, or photograph the can. One event only.</p>
+        <p className="eyebrow">Field log</p>
+        <h1>Record the work while it is fresh.</h1>
+        <p className="muted">A voice note, label photo, or short typed note is enough. Saving a record never shares it.</p>
       </div>
-      <div className="split">
-        <section className="card">
-          <h2>Record</h2>
+      <div className="capture-grid">
+        <section className="card capture-card">
+          <p className="eyebrow">Fastest in the field</p>
+          <h2>Say what you did</h2>
+          <p className="muted">Tap once to start. Tap again when you are done.</p>
           <BigButton
             className={`big hold ${holding ? "rec" : ""}`}
             kind="ghost"
-            onMouseDown={startHold}
-            onMouseUp={stopHold}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              startHold();
-            }}
-            onTouchEnd={stopHold}
+            aria-pressed={holding}
+            onClick={toggleRecording}
           >
-            {holding ? "Listening…" : audio ? "Recorded — tap send" : "Hold to talk"}
+            {holding ? "Listening… tap to finish" : audio ? "Voice note ready · record again" : "Start voice note"}
           </BigButton>
-          <label>Photo of the can</label>
+          <label>Photograph the product label</label>
           <UncontrolledFile accept="image/*" capture="environment" onFile={setImage} />
+          {(audio || image) && (
+            <div className="input-status" aria-live="polite">
+              {audio && <span>Voice note ready</span>}
+              {image && <span>Photo ready</span>}
+            </div>
+          )}
         </section>
-        <section className="card">
-          <h2>Or type it</h2>
+        <section className="card capture-card">
+          <p className="eyebrow">Quiet option</p>
+          <h2>Type a quick note</h2>
           <label>Parcel</label>
           <select value={parcel} onChange={(e) => setParcel(e.target.value)}>
             {(parcels.length ? parcels : [{ id: "p3", label: "P3", crop: "wheat" }]).map((p) => (
@@ -241,11 +283,12 @@ export default function CapturePage() {
             rows={5}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. Field 3, product X, 1.2 L/ha, 16 ft strip by the ditch"
+            placeholder="Ditch 40 — GreenGuard at 1.2 L/ha, with a 5 m strip by the watercourse."
           />
+          {savedLocally && <p className="local-draft">Draft saved in this browser until it is sent.</p>}
           {err && <p className="bad">{err}</p>}
           <BigButton disabled={busy} onClick={send}>
-            {busy ? "Reading…" : "Send"}
+            {busy ? "Reading the evidence…" : "Review this record"}
           </BigButton>
         </section>
       </div>

@@ -32,15 +32,16 @@ Origin does more than generate text. It observes a request, plans the next safe 
 | External action | A partner-specific JSON package is delivered once, idempotently |
 | Observability | Shared trace ID, model provenance, run timeline, delivery and receipt records |
 
-## Google Cloud architecture
+## Production architecture
 
 ![Origin architecture](docs/architecture.png)
 
-| Component | Google technology | Responsibility |
+| Component | Technology | Responsibility |
 |---|---|---|
 | Agent framework | Google Gen AI SDK (`google-genai`) | Gemini tool-facing orchestration and structured generation |
 | Foundation model | Gemini 3.7 Flash on Vertex AI | Multimodal extraction and concise explanations |
-| Web and API | Cloud Run | Next.js farmer/partner experience and FastAPI control plane |
+| Web | Render | Responsive Next.js farmer experience and desktop-first Partner Desk |
+| Agent API | Google Cloud Run | FastAPI control plane and authenticated task worker |
 | Async runtime | Cloud Tasks | Retryable, authenticated `AgentRun` dispatch |
 | Durable state | Firestore | Events, permissions, runs, traces, receipts, and delivery state |
 | Evidence and delivery | Cloud Storage | Original evidence and recipient-specific JSON packages |
@@ -120,18 +121,22 @@ npm run build
 
 The offline suite covers the capture-to-delivery loop, AgentRun state transitions, task authentication, standing-permission containment, duplicate delivery protection, revoke/erase semantics, questionnaire sanitisation, tenancy, and Gemini fallback behavior.
 
-## Deploy to Google Cloud
+## Deploy
 
-Prerequisites: an authenticated `gcloud` CLI with permission to create Cloud Run, Cloud Tasks, Firestore, Cloud Storage, Artifact Registry, IAM, and Cloud Build resources.
+The production split keeps the public Next.js site on Render while the agent runtime and data plane stay on Google Cloud. A separate SQL database is not required: Firestore is the durable operational database.
+
+First deploy the API with an authenticated `gcloud` CLI that can create Cloud Run, Cloud Tasks, Firestore, Cloud Storage, Artifact Registry, IAM, and Cloud Build resources:
 
 ```powershell
-.\deploy\deploy.ps1 -ProjectId "YOUR_PROJECT_ID"
+.\deploy\deploy.ps1 -ProjectId "YOUR_PROJECT_ID" -ApiOnly
 ```
 
-The script enables required APIs, creates a least-purpose runtime service account, queue, bucket, and Firestore database, builds both services, deploys them to Cloud Run, and configures authenticated task dispatch. `.gcloudignore` files keep local data, notes, caches, and environment files out of build uploads. Review the [submission checklist](docs/submission.md) before recording the demo.
+The script enables required APIs, creates a least-purpose runtime service account, queue, bucket, and Firestore database, deploys the API, and configures authenticated task dispatch. Then create the Render service from [`render.yaml`](render.yaml), set `NEXT_PUBLIC_API_URL` to the Cloud Run API URL, and update the API's `ORIGIN_CORS_ORIGINS` to the resulting Render HTTPS origin. `.gcloudignore` and `.gitignore` keep local data, credentials, notes, caches, and tools out of deployment uploads. Review the [submission checklist](docs/submission.md) before recording the demo.
 
 ## Design choices
 
 Origin deliberately uses the Google Gen AI SDK directly instead of LangGraph. This keeps the judged agent path visibly Google-native, reduces orchestration surface area, and lets Cloud Tasks plus `AgentRun` provide the durable state machine the product actually needs. The deterministic policy engine remains independently testable.
+
+The interface is one responsive web application, not a separate native mobile product. Field capture and quick approvals use large touch targets and tolerate intermittent connectivity; detailed review, data sharing, and the Partner Desk expand into desktop workflows. The evidence behind that choice is documented in [docs/ux-research.md](docs/ux-research.md).
 
 Apache-2.0 — see [LICENSE](LICENSE).

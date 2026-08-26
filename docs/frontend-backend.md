@@ -29,7 +29,7 @@ Both profiles execute `runs.execute`; there is no separate cloud-only agent impl
 4. `/consent/{id}` renders recipient, purpose, expiry, and every outgoing field/value pair.
 5. `/receipts` groups access by recipient and purpose, shows delivery state, and offers revoke, export, and erase actions with accurate limits.
 
-The browser talks only to the FastAPI service. It has no Vertex AI, Firestore, or Cloud Storage credentials.
+Render serves the browser application, which talks only to the FastAPI service over HTTPS. It has no Vertex AI, Firestore, or Cloud Storage credentials. `NEXT_PUBLIC_API_URL` is fixed during the Render build, and Cloud Run permits only the deployed Render origin through CORS.
 
 ## Backend
 
@@ -109,4 +109,4 @@ The internal worker endpoint requires `X-Origin-Worker-Token`; Cloud Tasks may a
 
 All runtime configuration is under the `ORIGIN_` prefix. The complete reference is [apps/api/.env.example](../apps/api/.env.example). Browser build-time values use `NEXT_PUBLIC_` variables and are listed in `apps/web/lib/session.ts`.
 
-Deployment automation lives in [deploy/deploy.ps1](../deploy/deploy.ps1); the judge-facing system diagram is [architecture.md](architecture.md).
+Google Cloud deployment automation lives in [deploy/deploy.ps1](../deploy/deploy.ps1), while the web service definition lives in [render.yaml](../render.yaml). The judge-facing system diagram is [architecture.md](architecture.md).

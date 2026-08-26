@@ -5,6 +5,45 @@ import { useRouter } from "next/navigation";
 import { api, type AgentRun, type RuleDraft } from "@/lib/api";
 import { BigButton } from "@/components/BigButton";
 
+function ShieldGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 20 6v5c0 5.2-3.2 8.3-8 10-4.8-1.7-8-4.8-8-10V6l8-3Z" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m8.5 12 2.2 2.2 4.8-5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function RunTimeline({ run }: { run: AgentRun }) {
+  return (
+    <article className="run-entry">
+      <div className="run-head">
+        <div>
+          <strong>{run.decision ? run.decision.replace(/_/g, " ") : "Checking request"}</strong>
+          <p className="trace-label">Trace {run.trace_id}</p>
+        </div>
+        <span className={`status status-${run.status}`}>{run.status.replace(/_/g, " ")}</span>
+      </div>
+      <ol className="timeline">
+        {(run.steps ?? []).map((step, index) => (
+          <li key={`${step.name}-${index}`}>
+            <strong>{step.name.replace(/_/g, " ")}</strong>
+            <span>{step.detail}</span>
+          </li>
+        ))}
+      </ol>
+      {run.model?.provider && (
+        <p className="model-line">
+          {run.model.provider}
+          {run.model.model && run.model.model !== "none" ? ` · ${run.model.model}` : ""}
+          {run.model.location ? ` · ${run.model.location}` : ""}
+        </p>
+      )}
+      {run.error && <p className="bad">{run.error}</p>}
+    </article>
+  );
+}
+
 export default function TodayPage() {
   const router = useRouter();
   const [data, setData] = useState<any>(null);
@@ -46,9 +85,11 @@ export default function TodayPage() {
   const lastDecision = data?.last_decision;
   const farmName = data?.farm?.display_name ?? "Riverside Farms";
   const runs: AgentRun[] = data?.agent_runs ?? [];
+  const policies = data?.standing_policies?.length ?? 0;
+  const pending = drafts.length + (request ? 1 : 0) + (draft ? 1 : 0);
+  const latestRun = runs[0];
+  const loading = !data && !err;
 
-  // The agent narrates in the farmer's own language, so prefer its note over
-  // any English written into this file. Falls back when Vertex is unreachable.
   const askNote =
     lastDecision?.decision === "ask_farmer" && lastDecision?.consent_id === draft?.id
       ? lastDecision
@@ -57,139 +98,173 @@ export default function TodayPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Today</h1>
-        {err && <p className="bad">{err} — is the API running on :8000?</p>}
-      </div>
+      <section className="dashboard-intro">
+        <div>
+          <p className="eyebrow">{farmName} · 2026 crop year</p>
+          <h1>Your farm data, on your terms.</h1>
+          <p className="intro-copy">
+            Record field work once. Origin handles routine partner requests only inside the boundary you set.
+          </p>
+        </div>
+        <div className="control-promise">
+          <span className="promise-icon"><ShieldGlyph /></span>
+          <span>
+            <strong>You stay in control</strong>
+            <small>Gemini reads. Your rules decide. Every action leaves a receipt.</small>
+          </span>
+        </div>
+      </section>
 
-      <div className="card-grid">
-        {justSaved && (
-          <section className="card card-hero">
-            <div>
-              <h2>Field fact saved</h2>
-              <p>Nothing was sent because no partner request is open.</p>
-              <p className="muted">If a request arrives later, Origin will re-check its purpose and fields.</p>
-            </div>
-          </section>
-        )}
-        {drafts.map((d) => (
-          <section key={d.id} className="card card-hero">
-            <div>
-              <h2>{d.partner_name} wants a new share pack</h2>
-              <p>{d.plain_summary}</p>
-              {d.until_date && <p className="muted">That is {d.until_date}.</p>}
-              {d.refused_fields?.length || d.dropped_refused?.length ? (
-                <p className="bad">
-                  They asked for {(d.refused_fields || d.dropped_refused).join(", ")}. Origin stripped that.
-                </p>
-              ) : null}
-            </div>
-            <div className="row">
-              <BigButton disabled={!!busyId} onClick={() => decideDraft(d.id, true)}>
-                Approve
-              </BigButton>
-              <BigButton kind="danger" disabled={!!busyId} onClick={() => decideDraft(d.id, false)}>
-                Refuse
-              </BigButton>
-            </div>
-          </section>
-        ))}
-
-        {lastAuto && (
-          <section className="card card-hero">
-            <div>
-              <h2>Origin already sent it</h2>
-              <p>
-                {lastAuto.note ??
-                  "Standing permission covered this request. The elevator got the spray statement — not your yield."}
-              </p>
-              <p className="muted">Revoke on Who if that was wrong. {lastAuto.reason}</p>
-            </div>
-            <BigButton kind="ghost" onClick={() => router.push("/receipts")}>
-              Open Who
-            </BigButton>
-          </section>
-        )}
-
-        {request && (
-          <section className="card card-hero">
-            <div>
-              <h2>{request.partner_name} wants a spray statement</h2>
-              <p>
-                They asked for this season’s spray facts for the elevator file. Record the field once. You
-                decide who sees it.
-              </p>
-            </div>
-            <BigButton onClick={() => router.push("/capture")}>Record what I did</BigButton>
-          </section>
-        )}
-
-        {draft && (
-          <section className="card card-hero">
-            <div>
-              <h2>Review before they see anything</h2>
-              <p>
-                {askNote?.note ??
-                  `${draft.partner_name} is waiting on your yes or no. Origin will not send this on its own.`}
-              </p>
-              {overAsk.length > 0 && (
-                <p className="bad">
-                  They now also want {overAsk.join(", ")} — never in your box, so Origin sent nothing.
-                </p>
-              )}
-            </div>
-            <BigButton onClick={() => router.push(`/consent/${draft.id}`)}>Open consent</BigButton>
-          </section>
-        )}
-
-        {!request && !draft && !lastAuto && drafts.length === 0 && !justSaved && (
-          <section className="card card-hero">
-            <div>
-              <h2>Record what you just did</h2>
-              <p className="muted">{farmName}</p>
-            </div>
-            <BigButton onClick={() => router.push("/capture")}>Speak or snap</BigButton>
-          </section>
-        )}
-      </div>
-
-      {runs.length > 0 && (
-        <section className="activity">
-          <div className="section-head">
-            <div>
-              <h2>Agent activity</h2>
-              <p className="muted">Background actions, safety stops, and delivery evidence.</p>
-            </div>
-          </div>
-          {runs.slice(0, 3).map((run) => (
-            <article className="card run-card" key={run.id}>
-              <div className="run-head">
-                <div>
-                  <strong>{run.decision ? run.decision.replace(/_/g, " ") : "Routing request"}</strong>
-                  <p className="muted">Trace {run.trace_id}</p>
-                </div>
-                <span className={`status status-${run.status}`}>{run.status.replace(/_/g, " ")}</span>
-              </div>
-              <ol className="timeline">
-                {(run.steps ?? []).map((step, index) => (
-                  <li key={`${step.name}-${index}`}>
-                    <strong>{step.name.replace(/_/g, " ")}</strong>
-                    <span>{step.detail}</span>
-                  </li>
-                ))}
-              </ol>
-              {run.model?.provider && (
-                <p className="muted">
-                  Narration: {run.model.provider}
-                  {run.model.model && run.model.model !== "none" ? ` · ${run.model.model}` : ""}
-                  {run.model.location ? ` · ${run.model.location}` : ""}
-                </p>
-              )}
-              {run.error && <p className="bad">{run.error}</p>}
-            </article>
-          ))}
-        </section>
+      {err && (
+        <div className="alert alert-error" role="alert">
+          <strong>Origin could not reach the farm service.</strong>
+          <span>{err}. Your typed notes remain on this device.</span>
+        </div>
       )}
+
+      <section className="signal-grid" aria-label="Farm data status">
+        <div className="signal">
+          <span className={`signal-dot ${pending ? "attention" : "safe"}`} aria-hidden="true" />
+          <span><small>Needs you</small><strong>{loading ? "Checking…" : pending ? `${pending} decision${pending === 1 ? "" : "s"}` : "Nothing pending"}</strong></span>
+        </div>
+        <div className="signal">
+          <span className="signal-number">{policies}</span>
+          <span><small>Standing permissions</small><strong>{policies ? "Bounded automation on" : "Manual approval only"}</strong></span>
+        </div>
+        <div className="signal">
+          <span className={`signal-dot ${latestRun?.status === "failed" ? "blocked" : "live"}`} aria-hidden="true" />
+          <span><small>Latest agent run</small><strong>{latestRun ? latestRun.status.replace(/_/g, " ") : "Ready"}</strong></span>
+        </div>
+      </section>
+
+      <div className="dashboard-layout">
+        <section className="task-stack" aria-labelledby="today-action">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">Today</p>
+              <h2 id="today-action">What needs attention</h2>
+            </div>
+            <button className="text-action" type="button" onClick={load}>Refresh</button>
+          </div>
+
+          {loading && (
+            <section className="card task-card skeleton-card" aria-label="Loading today's work">
+              <span className="skeleton-line wide" />
+              <span className="skeleton-line" />
+              <span className="skeleton-block" />
+            </section>
+          )}
+
+          {justSaved && (
+            <section className="card task-card task-success">
+              <div className="task-copy">
+                <span className="task-label">Saved to your farm</span>
+                <h2>Field record saved. Nothing was shared.</h2>
+                <p>There is no open partner request. Origin will re-check the recipient, purpose, and fields if one arrives later.</p>
+              </div>
+              <BigButton kind="ghost" onClick={() => router.push("/capture")}>Record another job</BigButton>
+            </section>
+          )}
+
+          {drafts.map((d) => (
+            <section key={d.id} className="card task-card task-attention">
+              <div className="task-copy">
+                <span className="task-label">New sharing rule · approval required</span>
+                <h2>{d.partner_name} sent a new questionnaire</h2>
+                <p>{d.plain_summary}</p>
+                {d.until_date && <p className="supporting">Requested through {d.until_date}.</p>}
+                {d.refused_fields?.length || d.dropped_refused?.length ? (
+                  <p className="exclusion-note">
+                    <ShieldGlyph /> Origin removed {(d.refused_fields || d.dropped_refused).join(", ")} before this reached you.
+                  </p>
+                ) : null}
+              </div>
+              <div className="row">
+                <BigButton disabled={!!busyId} onClick={() => decideDraft(d.id, true)}>Approve rule</BigButton>
+                <BigButton kind="ghost" disabled={!!busyId} onClick={() => decideDraft(d.id, false)}>Decline</BigButton>
+              </div>
+            </section>
+          ))}
+
+          {lastAuto && (
+            <section className="card task-card task-success">
+              <div className="task-copy">
+                <span className="task-label">Handled within your permission</span>
+                <h2>Origin completed the repeat request</h2>
+                <p>{lastAuto.note ?? "Standing permission covered this spray statement. No extra farm data was included."}</p>
+                <p className="supporting">{lastAuto.reason}</p>
+              </div>
+              <BigButton kind="ghost" onClick={() => router.push("/receipts")}>See sharing receipt</BigButton>
+            </section>
+          )}
+
+          {request && (
+            <section className="card task-card task-primary">
+              <div className="task-copy">
+                <span className="task-label">Field record needed</span>
+                <h2>{request.partner_name} needs a spray statement</h2>
+                <p>Record this season’s spray work once. You will review the extracted facts and exactly what the elevator can receive.</p>
+                <div className="request-meta">
+                  <span>Purpose: spray statement</span>
+                  <span>Yield excluded</span>
+                  <span>Revenue excluded</span>
+                </div>
+              </div>
+              <BigButton onClick={() => router.push("/capture")}>Record field work</BigButton>
+            </section>
+          )}
+
+          {draft && (
+            <section className="card task-card task-attention">
+              <div className="task-copy">
+                <span className="task-label">Your approval is required</span>
+                <h2>Review before {draft.partner_name} sees anything</h2>
+                <p>{askNote?.note ?? "Origin has prepared the smallest matching data pack. It will not leave your farm until you decide."}</p>
+                {overAsk.length > 0 && (
+                  <p className="exclusion-note"><ShieldGlyph /> New request blocked: {overAsk.join(", ")} is outside your permission.</p>
+                )}
+              </div>
+              <BigButton onClick={() => router.push(`/consent/${draft.id}`)}>Review exact data</BigButton>
+            </section>
+          )}
+
+          {!request && !draft && !lastAuto && drafts.length === 0 && !justSaved && !loading && (
+            <section className="card task-card task-calm">
+              <div className="task-copy">
+                <span className="task-label">No partner is waiting</span>
+                <h2>Capture the work while it is fresh</h2>
+                <p>A quick voice note or photo is enough. Saving a field record never gives anyone permission to receive it.</p>
+              </div>
+              <BigButton onClick={() => router.push("/capture")}>Record field work</BigButton>
+            </section>
+          )}
+        </section>
+
+        <aside className="agent-console" aria-labelledby="agent-activity">
+          <div className="console-head">
+            <div>
+              <p className="eyebrow">Live audit trail</p>
+              <h2 id="agent-activity">Agent activity</h2>
+            </div>
+            <span className="agent-live"><span /> {runs.some((r) => r.status === "running" || r.status === "queued") ? "Working" : "Ready"}</span>
+          </div>
+          <p className="console-intro">See the policy checks and tool actions behind every decision.</p>
+          {runs.length ? runs.slice(0, 2).map((run) => <RunTimeline run={run} key={run.id} />) : (
+            <div className="empty-trace">
+              <ShieldGlyph />
+              <strong>No hidden actions</strong>
+              <span>The next request will show its checks here, step by step.</span>
+            </div>
+          )}
+          {runs.length > 2 && <p className="trace-count">{runs.length - 2} earlier runs are kept in the audit log.</p>}
+        </aside>
+      </div>
+
+      <section className="boundary-strip" aria-label="Origin authority boundary">
+        <div><span>01</span><strong>Gemini reads</strong><p>Voice, photos, forms, and terms become a draft you can correct.</p></div>
+        <div><span>02</span><strong>Rules decide</strong><p>Recipient, purpose, exact fields, and expiry are checked deterministically.</p></div>
+        <div><span>03</span><strong>Origin acts</strong><p>Only a matching request is delivered, with a trace and receipt.</p></div>
+      </section>
     </>
   );
 }
