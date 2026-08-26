@@ -12,7 +12,7 @@ Point to the partner request and the agent activity card.
 
 ## 0:25–1:05 — Multimodal capture
 
-Open Speak, select Ditch 40, and type or say:
+Open Record, select Ditch 40, and type or say:
 
 > Sprayed Field 3 today with GreenGuard at 1.2 liters per hectare and kept a 5 meter buffer by the ditch.
 
@@ -30,7 +30,7 @@ Switch to Partner Desk and open the current package.
 
 ## 1:40–2:20 — Real agent behavior
 
-Return to Speak and quickly save a second confirmed operation on South 40. Show the message that no open request exists, so nothing was sent. Then click **Ask the farm again** on Partner Desk and wait for the run to complete. Show the run timeline and new delivery destination.
+Return to Record and quickly save a second confirmed operation on South 40. Show the message that no open request exists, so nothing was sent. Then request South 40 from Partner Desk and wait for the run to complete. Show the run timeline and new delivery destination.
 
 > Capturing a fact alone is never permission to publish it. When the new request arrives, Cloud Tasks runs it in the background. The deterministic gate sees the same partner, purpose, fields, and valid expiry, so the agent delivers the new fact automatically and tells the farmer what it did.
 
@@ -40,11 +40,11 @@ Click **Boundary test: change purpose** and show `waiting_for_farmer`.
 
 ## 2:20–2:55 — Revocation and honest deletion
 
-Open Who, show the grouped receipt, then revoke.
+Open Sharing, show the grouped receipt, then revoke.
 
 > Revocation disables Origin-issued access immediately and records a recipient notice. Origin does not make the dishonest claim that it can erase a file a recipient already downloaded.
 
-Show the erase wording without erasing the seeded demo unless a reset is available.
+Show the shared-demo notice: destructive erasure is deliberately disabled for this public synthetic tenant. Explain that private tenants send recipient notices first, then erase Origin-managed evidence, delivery objects, payloads, and execution traces while keeping hash-only proof stubs.
 
 ## 2:55–3:20 — Architecture and close
 

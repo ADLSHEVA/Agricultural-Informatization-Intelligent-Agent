@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -77,8 +77,33 @@ def send(
         "object_uri": None,
         "webhook": {"configured": False, "status": "not_attempted"},
         "recipient_notice": "not_required",
+        "attempt_started_at": _now(),
     }
-    store.put("deliveries", delivery_id, record)
+    if existing:
+        status = str(existing.get("status") or "")
+        if status not in {"failed", "delivering", "recovering"}:
+            raise RuntimeError(f"delivery cannot resume from {status or 'unknown'}")
+        if status in {"delivering", "recovering"}:
+            try:
+                started = datetime.fromisoformat(str(existing.get("attempt_started_at") or ""))
+            except ValueError:
+                started = datetime.min.replace(tzinfo=timezone.utc)
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - started <= timedelta(seconds=30):
+                raise RuntimeError("delivery is already in progress")
+        claim = {**existing, "status": "recovering", "attempt_started_at": _now()}
+        if not store.put_if_status("deliveries", delivery_id, claim, {status}):
+            current = store.get("deliveries", delivery_id) or {}
+            if current.get("status") == "delivered":
+                return current
+            raise RuntimeError("delivery is already in progress")
+        store.put("deliveries", delivery_id, record)
+    elif not store.put_if_absent("deliveries", delivery_id, record):
+        current = store.get("deliveries", delivery_id) or {}
+        if current.get("status") == "delivered":
+            return current
+        raise RuntimeError("delivery is already in progress")
     try:
         object_uri = blobs.save_delivery(
             partner_id=consent.partner_id, delivery_id=delivery_id, payload=payload
@@ -143,3 +168,43 @@ def send_notice(kind: str, consent: ConsentRecord, pack: PackRecord | None) -> d
 def for_consent(consent_id: str) -> dict | None:
     delivery_id = f"dlv-{consent_id.removeprefix('cns-')}"
     return store.get("deliveries", delivery_id)
+
+
+def erase_origin_copy(farm_id: str) -> int:
+    """Remove payloads and bucket objects while retaining hash-only audit stubs.
+
+    A webhook recipient may already have exported a copy; that is why erase
+    sends a notice first. This function only claims deletion of copies managed
+    by Origin itself: Firestore/JSON delivery payloads and the configured GCS
+    partner inbox/notice objects.
+    """
+    rows = store.list_where("deliveries", farm_id=farm_id)
+    erased_at = _now()
+    for row in rows:
+        blobs.delete_uri(row.get("object_uri"))
+        pack = row.get("pack") if isinstance(row.get("pack"), dict) else {}
+        sensitive = {
+            "pack": pack,
+            "message": row.get("message"),
+            "purpose": row.get("purpose"),
+        }
+        digest = hashlib.sha256(
+            json.dumps(sensitive, default=str, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()[:16]
+        stub = {
+            "id": row["id"],
+            "event": row.get("event"),
+            "partner_id": row.get("partner_id"),
+            "farm_id": farm_id,
+            "consent_id": row.get("consent_id"),
+            "status": "origin_copy_erased",
+            "destinations": list(row.get("destinations") or []),
+            "recipient_notice": row.get("recipient_notice"),
+            "content_hash": digest,
+            "object_uri": None,
+            "erased_at": erased_at,
+        }
+        if pack:
+            stub["pack"] = {"id": pack.get("id"), "fields": {}, "checks": {}}
+        store.put("deliveries", row["id"], stub)
+    return len(rows)

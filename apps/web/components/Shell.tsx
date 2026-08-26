@@ -101,10 +101,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
         {farmer ? <FarmerLinks path={path} who={who} className="topnav" /> : <p className="desk-kicker">Heartland Grain LLC</p>}
-        <Link className="context-switch" href={farmer ? "/desk" : "/"}>
-          <span className="context-dot" aria-hidden="true" />
-          {farmer ? "Partner desk" : "Farm view"}
-        </Link>
+        {!farmer && (
+          <Link className="context-switch" href="/">
+            <span className="context-dot" aria-hidden="true" />
+            Farm view
+          </Link>
+        )}
       </header>
       <div className={farmer ? "work" : "desk-frame"}>
         <main id="main" className="shell">

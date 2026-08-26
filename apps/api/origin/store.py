@@ -93,6 +93,40 @@ def put(collection: str, item_id: str, payload: dict[str, Any]) -> None:
         _save(db)
 
 
+def put_if_status(
+    collection: str,
+    item_id: str,
+    payload: dict[str, Any],
+    allowed_statuses: set[str],
+) -> bool:
+    """Atomically replace a row only from an allowed lifecycle state."""
+    cloud = _firestore()
+    if cloud:
+        return cloud.put_if_status(collection, item_id, payload, allowed_statuses)
+    with _lock:
+        db = _load()
+        current = db.get(collection, {}).get(item_id)
+        if current is None or current.get("status") not in allowed_statuses:
+            return False
+        db.setdefault(collection, {})[item_id] = payload
+        _save(db)
+        return True
+
+
+def put_if_absent(collection: str, item_id: str, payload: dict[str, Any]) -> bool:
+    """Atomically create a row; return False when another executor won."""
+    cloud = _firestore()
+    if cloud:
+        return cloud.put_if_absent(collection, item_id, payload)
+    with _lock:
+        db = _load()
+        if item_id in db.get(collection, {}):
+            return False
+        db.setdefault(collection, {})[item_id] = payload
+        _save(db)
+        return True
+
+
 def get(collection: str, item_id: str) -> dict[str, Any] | None:
     cloud = _firestore()
     if cloud:

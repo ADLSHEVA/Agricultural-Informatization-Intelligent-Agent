@@ -47,6 +47,7 @@ export default function ReceiptsPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const sharedDemo = process.env.NEXT_PUBLIC_SHARED_DEMO === "true";
 
   async function load() {
     try {
@@ -96,6 +97,8 @@ export default function ReceiptsPage() {
       await api.eraseMe();
       await load();
       setMsg("Origin's stored copy was erased. Future access is blocked; recipient notices were recorded.");
+    } catch (e: any) {
+      setErr(e.message);
     } finally {
       setBusy(false);
     }
@@ -159,7 +162,8 @@ export default function ReceiptsPage() {
       <section className="card">
         <p className="eyebrow">Your copy</p>
         <h2>Portability and deletion</h2>
-        <p className="muted">Export a machine-readable copy at any time. Erasing Origin's copy also blocks future access, but cannot silently remove files a recipient already downloaded.</p>
+        <p className="muted">Export a machine-readable copy at any time. Erasing Origin-managed activity records also blocks future access, but cannot silently remove files a recipient already downloaded.</p>
+        {sharedDemo && <p className="muted">Erasure is disabled here because this public hackathon site is a shared, synthetic tenant.</p>}
         <div className="actions">
         <BigButton kind="ghost" onClick={() => router.push("/terms")}>
           Check partner terms
@@ -167,9 +171,11 @@ export default function ReceiptsPage() {
         <BigButton kind="ghost" onClick={exp}>
           Export Origin's copy
         </BigButton>
-        <BigButton kind="danger" onClick={erase}>
-          Erase Origin's copy
-        </BigButton>
+        {!sharedDemo && (
+          <BigButton kind="danger" onClick={erase}>
+            Erase Origin's copy
+          </BigButton>
+        )}
         </div>
       </section>
     </>

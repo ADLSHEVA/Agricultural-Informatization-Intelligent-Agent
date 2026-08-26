@@ -7,7 +7,9 @@ path. If it ever fails, the Sunday loop depends on a network call.
 
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
+from fastapi import HTTPException
 
 from origin import agent, capture
 from origin.compile import load_rule, partner_index, rule_for_market
@@ -27,30 +29,35 @@ def test_partner_index_comes_from_yaml(local_store):
         "rule_id": "elevator_spray_statement_v1",
         "market": "US",
     }
-    assert index["loire-cereals-coop"]["market"] == "EU"
+    assert "loire-cereals-coop" not in index
 
 
 def test_market_picks_the_pack(local_store):
     assert rule_for_market("US") == "elevator_spray_statement_v1"
-    assert rule_for_market("EU") == "coop_ppp_statement_v1"
+    with pytest.raises(KeyError):
+        rule_for_market("EU")
 
 
 def test_farm_country_picks_the_pack(local_store):
     assert agent.default_rule_for_farm({"country": "US"}) == "elevator_spray_statement_v1"
-    assert agent.default_rule_for_farm({"country": "FR"}) == "coop_ppp_statement_v1"
-    # An unplaceable farm reads as EU rather than being handed the US pack.
-    assert agent.default_rule_for_farm(None) == "coop_ppp_statement_v1"
+    for farm in ({"country": "FR"}, None):
+        with pytest.raises(HTTPException) as exc:
+            agent.default_rule_for_farm(farm)
+        assert exc.value.detail["code"] == "unsupported_market"
 
 
-def test_unknown_partner_falls_back_to_the_farms_market(local_store):
-    assert agent.default_rule_for("nobody-ltd", {"country": "FR"}) == "coop_ppp_statement_v1"
+def test_unknown_partner_fails_closed(local_store):
+    with pytest.raises(HTTPException) as exc:
+        agent.default_rule_for("nobody-ltd", {"country": "US"})
+    assert exc.value.detail["code"] == "unknown_partner"
     assert agent.partner_display("nobody-ltd") == "nobody-ltd"
 
 
 def test_load_rule_survives_a_version_bump(local_store):
     """Packs are found by their `id`, not by a filename guessed from it."""
-    assert load_rule("coop_ppp_statement_v1")["partner"] == "loire-cereals-coop"
-    assert load_rule("does_not_exist_v9")["id"] == "elevator_spray_statement_v1"
+    assert load_rule("elevator_spray_statement_v1")["partner"] == "heartland-grain"
+    with pytest.raises(KeyError):
+        load_rule("does_not_exist_v9")
 
 
 # --- the rule pack's `until` is honoured, not decorative ---------------------
@@ -67,8 +74,7 @@ def test_until_reads_the_rule():
 
 
 def test_shipped_packs_expire_at_year_end(local_store):
-    for rule_id in ("elevator_spray_statement_v1", "coop_ppp_statement_v1"):
-        assert until_from_rule(load_rule(rule_id)) == year_end()
+    assert until_from_rule(load_rule("elevator_spray_statement_v1")) == year_end()
 
 
 # --- confirm patches only what the farmer touched ----------------------------
@@ -178,6 +184,31 @@ def test_no_api_key_is_read_anywhere(monkeypatch):
         assert gemini_router._client() is None
     finally:
         config.reset_settings()
+
+
+def test_unreadable_vertex_response_is_labeled_fallback(monkeypatch):
+    from origin import gemini_router
+
+    class BadResponse:
+        usage_metadata = None
+
+        @property
+        def text(self):
+            raise ValueError("response has no text part")
+
+    class FakeModels:
+        @staticmethod
+        def generate_content(**_kwargs):
+            return BadResponse()
+
+    class FakeClient:
+        models = FakeModels()
+
+    monkeypatch.setattr(gemini_router, "_client", lambda: FakeClient())
+    assert gemini_router._generate(["prompt"], label="test_bad_response") is None
+    provenance = gemini_router.last_provenance()
+    assert provenance["mode"] == "fallback"
+    assert provenance["reason"] == "ValueError"
 
 
 def test_demo_tokens_can_be_switched_off(monkeypatch):

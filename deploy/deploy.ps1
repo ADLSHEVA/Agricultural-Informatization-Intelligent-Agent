@@ -5,10 +5,15 @@ param(
   [string]$Model = "gemini-3.7-flash",
   [string]$InternalToken = "",
   [string]$FrontendOrigin = "",
-  [switch]$ApiOnly
+  [switch]$ApiOnly,
+  [switch]$DeployWebToCloudRun
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($ApiOnly -and $DeployWebToCloudRun) {
+  throw "Choose either the default API-only deployment or -DeployWebToCloudRun, not both."
+}
 
 function Invoke-Gcloud {
   param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
@@ -89,16 +94,16 @@ if (-not (Test-Gcloud tasks queues describe $queue --location $Region)) {
 }
 
 Invoke-Gcloud builds submit apps/api --tag $apiImage
-$apiEnvironment = "ORIGIN_GCP_PROJECT=$ProjectId,ORIGIN_VERTEX_LOCATION=global,ORIGIN_GEMINI_MODEL=$Model,ORIGIN_STORE=firestore,ORIGIN_BUCKET=$bucket,ORIGIN_AGENT_DISPATCH=inline,ORIGIN_DEMO_TOKENS=true,ORIGIN_SEED_DEMO=true,ORIGIN_INTERNAL_TOKEN=$InternalToken"
+$apiEnvironment = "ORIGIN_GCP_PROJECT=$ProjectId,ORIGIN_VERTEX_LOCATION=global,ORIGIN_GEMINI_MODEL=$Model,ORIGIN_STORE=firestore,ORIGIN_BUCKET=$bucket,ORIGIN_AGENT_DISPATCH=inline,ORIGIN_DEMO_TOKENS=true,ORIGIN_SEED_DEMO=true,ORIGIN_SHARED_DEMO=true,ORIGIN_INTERNAL_TOKEN=$InternalToken"
 if ($FrontendOrigin) {
   $apiEnvironment = "$apiEnvironment,ORIGIN_CORS_ORIGINS=$FrontendOrigin"
 }
 Invoke-Gcloud run deploy $apiService --image $apiImage --region $Region --service-account $runtimeAccount --allow-unauthenticated --min 0 --max 3 --memory 768Mi --cpu 1 --set-env-vars $apiEnvironment
 $apiUrl = ([string](Invoke-Gcloud run services describe $apiService --region $Region --format "value(status.url)")).Trim()
 
-Invoke-Gcloud run services update $apiService --region $Region --update-env-vars "ORIGIN_AGENT_DISPATCH=tasks,ORIGIN_TASKS_LOCATION=$Region,ORIGIN_TASKS_QUEUE=$queue,ORIGIN_API_BASE_URL=$apiUrl,ORIGIN_TASK_SERVICE_ACCOUNT=$runtimeAccount"
+Invoke-Gcloud run services update $apiService --region $Region --update-env-vars "ORIGIN_AGENT_DISPATCH=tasks,ORIGIN_TASKS_LOCATION=$Region,ORIGIN_TASKS_QUEUE=$queue,ORIGIN_API_BASE_URL=$apiUrl,ORIGIN_TASK_SERVICE_ACCOUNT=$runtimeAccount,ORIGIN_REQUIRE_WORKER_OIDC=true"
 
-if (-not $ApiOnly) {
+if ($DeployWebToCloudRun) {
   Invoke-Gcloud builds submit . --config deploy/cloudbuild-web.yaml --substitutions "_API_URL=$apiUrl,_IMAGE=$webImage"
   Invoke-Gcloud run deploy $webService --image $webImage --region $Region --allow-unauthenticated --min 0 --max 3 --memory 512Mi --cpu 1
   $webUrl = ([string](Invoke-Gcloud run services describe $webService --region $Region --format "value(status.url)")).Trim()
@@ -108,7 +113,7 @@ if (-not $ApiOnly) {
 
 Write-Output "Origin API: $apiUrl"
 Write-Output "Health: $apiUrl/health"
-if ($ApiOnly -and -not $FrontendOrigin) {
-  Write-Output "Next: deploy the web app, then set ORIGIN_CORS_ORIGINS to its HTTPS origin."
+if (-not $DeployWebToCloudRun -and -not $FrontendOrigin) {
+  Write-Output "Next: set ORIGIN_CORS_ORIGINS to the Render HTTPS origin."
 }
 Write-Output "The generated worker token is stored in the Cloud Run environment and was not printed or written to the repository."

@@ -72,3 +72,36 @@ def partner_only(who: Principal) -> Principal:
     if who.role != "partner" or not who.partner_id:
         raise HTTPException(403, {"code": "forbidden", "message": "Partner token required"})
     return who
+
+
+def _verified_worker_claims(token: str, audience: str) -> dict:
+    """Verify the Google-signed identity attached by Cloud Tasks."""
+    from google.auth.transport.requests import Request as GoogleRequest
+    from google.oauth2 import id_token
+
+    return id_token.verify_oauth2_token(token, GoogleRequest(), audience=audience)
+
+
+def verify_worker_oidc(authorization: str | None) -> None:
+    """Require the configured task service account in cloud deployments.
+
+    The private HMAC header remains a second independent check in the route.
+    Local development leaves this off explicitly.
+    """
+    cfg = settings()
+    if not cfg.require_worker_oidc:
+        return
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(403, {"code": "forbidden", "message": "Worker identity required"})
+    token = authorization.split(" ", 1)[1].strip()
+    audience = cfg.api_base_url.rstrip("/")
+    if not audience or not cfg.task_service_account:
+        raise HTTPException(503, {"code": "worker_auth_misconfigured", "message": "Worker identity is not configured"})
+    try:
+        claims = _verified_worker_claims(token, audience)
+    except Exception:
+        raise HTTPException(403, {"code": "forbidden", "message": "Invalid worker identity"}) from None
+    email = str(claims.get("email") or "")
+    verified = claims.get("email_verified")
+    if email != cfg.task_service_account or verified not in {True, "true"}:
+        raise HTTPException(403, {"code": "forbidden", "message": "Wrong worker identity"})

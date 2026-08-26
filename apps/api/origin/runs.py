@@ -48,6 +48,35 @@ def _save(run: AgentRun) -> AgentRun:
     return run
 
 
+def _transition(run: AgentRun, allowed_statuses: set[str]) -> tuple[AgentRun, bool]:
+    """Persist a lifecycle change without overwriting a concurrent terminal result."""
+    changed = store.put_if_status(
+        "agent_runs", run.id, run.model_dump(mode="json"), allowed_statuses
+    )
+    if not changed:
+        current = store.get("agent_runs", run.id)
+        return (AgentRun.model_validate(current) if current else run), False
+    log.info(
+        "agent_run trace_id=%s run_id=%s request_id=%s status=%s decision=%s attempts=%s",
+        run.trace_id,
+        run.id,
+        run.request_id,
+        run.status,
+        run.decision or "pending",
+        run.attempts,
+    )
+    return run, True
+
+
+def _request_status(request_id: str | None, status: str) -> None:
+    if not request_id:
+        return
+    row = store.get("requests", request_id)
+    if row and row.get("status") not in {"completed", "refused", "superseded"}:
+        row["status"] = status
+        store.put("requests", request_id, row)
+
+
 def _latest_for_request(request_id: str | None) -> AgentRun | None:
     if not request_id:
         return None
@@ -57,6 +86,10 @@ def _latest_for_request(request_id: str | None) -> AgentRun | None:
     return AgentRun.model_validate(
         max(matches, key=lambda row: str(row.get("created_at") or ""))
     )
+
+
+def latest_for_request(request_id: str | None) -> AgentRun | None:
+    return _latest_for_request(request_id)
 
 
 @contextmanager
@@ -107,7 +140,9 @@ def execute(run_id: str) -> AgentRun:
     if not row:
         raise KeyError(f"AgentRun {run_id} not found")
     run = AgentRun.model_validate(row)
-    if run.status == "completed":
+    # Waiting is a durable human checkpoint, not a retryable worker failure.
+    # A farmer action resumes it through complete_from_result/manual consent.
+    if run.status in {"completed", "waiting_for_farmer", "running"}:
         return run
 
     request_row = store.get("requests", run.request_id)
@@ -115,14 +150,16 @@ def execute(run_id: str) -> AgentRun:
         run.status = "failed"
         run.error = "Partner request disappeared before execution"
         _step(run, "load_request", "failed", run.error)
-        _save(run)
+        _transition(run, {"queued", "failed"})
         raise RuntimeError(run.error)
 
     run.status = "running"
     run.attempts += 1
     run.error = None
     _step(run, "policy_routing", "running", "Evaluating facts, purpose, and standing permission.")
-    _save(run)
+    run, claimed = _transition(run, {"queued", "failed"})
+    if not claimed:
+        return run
     trace_token = begin_trace(run.trace_id)
     try:
         result = agent.tick_request(store.as_request(request_row))
@@ -154,6 +191,7 @@ def execute(run_id: str) -> AgentRun:
             run.pack_id = consent_obj.pack_id
             run.delivery_id = delivery["id"]
             run.status = "completed"
+            _request_status(run.request_id, "completed")
             _step(
                 run,
                 "partner_delivery",
@@ -168,13 +206,15 @@ def execute(run_id: str) -> AgentRun:
                 else "A confirmed field fact is required before the request can continue."
             )
             _step(run, "human_boundary", "waiting", detail)
-        return _save(run)
+        return _transition(run, {"running"})[0]
     except Exception as exc:
         run.status = "failed"
         run.error = _safe_error(exc)
         _step(run, "execution", "failed", run.error)
-        _save(run)
-        raise
+        current, changed = _transition(run, {"running"})
+        if changed:
+            raise
+        return current
     finally:
         end_trace(trace_token)
 
@@ -185,15 +225,20 @@ def complete_from_result(request_id: str | None, result: dict) -> AgentRun | Non
     run = _latest_for_request(request_id)
     if run is None:
         return None
+    if run.status == "completed":
+        return run
     run.decision = result.get("decision")
     run.reason_code = result.get("reason_code")
     consent_obj = result.get("consent")
     run.consent_id = result.get("consent_id") or getattr(consent_obj, "id", None)
     run.pack_id = result.get("pack_id") or getattr(consent_obj, "pack_id", None)
     run.model = last_provenance()
-    if result.get("mode") == "auto" and isinstance(consent_obj, ConsentRecord):
-        pack_row = store.get("packs", consent_obj.pack_id)
-        if pack_row:
+    allowed = {"queued", "running", "waiting_for_farmer", "failed"}
+    try:
+        if result.get("mode") == "auto" and isinstance(consent_obj, ConsentRecord):
+            pack_row = store.get("packs", consent_obj.pack_id)
+            if not pack_row:
+                raise RuntimeError("Pack missing at delivery time")
             delivery = partner_delivery.send(
                 consent_obj,
                 store.as_pack(pack_row),
@@ -201,12 +246,20 @@ def complete_from_result(request_id: str | None, result: dict) -> AgentRun | Non
                 trace_id=run.trace_id,
             )
             run.delivery_id = delivery["id"]
-        run.status = "completed"
-        _step(run, "partner_delivery", "completed", "Pack delivered after the missing fact was confirmed.")
-    else:
-        run.status = "waiting_for_farmer"
-        _step(run, "human_boundary", "waiting", "Consent is required before delivery.")
-    return _save(run)
+            run.status = "completed"
+            _step(run, "partner_delivery", "completed", "Pack delivered after the missing fact was confirmed.")
+            _request_status(request_id, "completed")
+        else:
+            run.status = "waiting_for_farmer"
+            _step(run, "human_boundary", "waiting", "Consent is required before delivery.")
+            _request_status(request_id, "linked")
+        return _transition(run, allowed)[0]
+    except Exception as exc:
+        run.status = "failed"
+        run.error = _safe_error(exc)
+        _step(run, "partner_delivery", "failed", run.error)
+        _transition(run, allowed)
+        raise
 
 
 def complete_manual_consent(consent_obj: ConsentRecord) -> dict:
@@ -230,11 +283,13 @@ def complete_manual_consent(consent_obj: ConsentRecord) -> dict:
         run.delivery_id = delivery["id"]
         _step(run, "farmer_approval", "completed", "Farmer approved the scoped pack.")
         _step(run, "partner_delivery", "completed", "Pack delivered to configured destinations.")
-        _save(run)
+        _transition(run, {"queued", "running", "waiting_for_farmer", "failed"})
+    _request_status(consent_obj.request_id, "completed")
     return delivery
 
 
 def complete_refusal(consent_obj: ConsentRecord) -> None:
+    _request_status(consent_obj.request_id, "refused")
     if not consent_obj.request_id:
         return
     run = _latest_for_request(consent_obj.request_id)
@@ -244,7 +299,7 @@ def complete_refusal(consent_obj: ConsentRecord) -> None:
     run.decision = "farmer_refused"
     run.consent_id = consent_obj.id
     _step(run, "farmer_refusal", "completed", "Farmer refused; no data was delivered.")
-    _save(run)
+    _transition(run, {"queued", "running", "waiting_for_farmer", "failed"})
 
 
 def recent_for_farm(farm_id: str, limit: int = 5) -> list[dict]:

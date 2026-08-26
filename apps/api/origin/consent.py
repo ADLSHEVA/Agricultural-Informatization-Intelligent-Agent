@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import hashlib
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -38,6 +39,15 @@ def until_from_rule(rule: dict, today: date | None = None) -> date:
 
 
 def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> ConsentRecord:
+    consent_id = (
+        f"cns-{hashlib.sha256(f'{request_id}:{pack.id}'.encode()).hexdigest()[:10]}"
+        if request_id
+        else f"cns-{uuid4().hex[:10]}"
+    )
+    if request_id:
+        existing = store.get("consents", consent_id)
+        if existing:
+            return store.as_consent(existing)
     rule = load_rule(pack.rule_id)
     partner_name = rule.get("partner_name", pack.partner_id)
     reuse = bool(rule.get("reuse", False))
@@ -51,7 +61,7 @@ def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> 
         locale=locale,
     )
     consent = ConsentRecord(
-        id=f"cns-{uuid4().hex[:10]}",
+        id=consent_id,
         farm_id=pack.farm_id,
         pack_id=pack.id,
         partner_id=pack.partner_id,
@@ -65,7 +75,11 @@ def open_draft(pack: PackRecord, locale: str, request_id: str | None = None) -> 
         plain_talk=talk,
         request_id=request_id,
     )
-    store.put("consents", consent.id, consent.model_dump(mode="json"))
+    payload = consent.model_dump(mode="json")
+    if request_id and not store.put_if_absent("consents", consent.id, payload):
+        return store.as_consent(store.get("consents", consent.id) or payload)
+    if not request_id:
+        store.put("consents", consent.id, payload)
     return consent
 
 
@@ -131,12 +145,14 @@ def expire_if_due(consent: ConsentRecord) -> ConsentRecord:
 
 
 def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
-    import hashlib
-
     pack_row = store.get("packs", consent.pack_id) or {}
     digest = hashlib.sha256(repr(pack_row.get("fields", {})).encode()).hexdigest()[:16]
+    receipt_id = f"rcp-{consent.id.removeprefix('cns-')}-{kind}"
+    existing = store.get("receipts", receipt_id)
+    if existing:
+        return store.as_receipt(existing)
     receipt = ReceiptRecord(
-        id=f"rcp-{uuid4().hex[:10]}",
+        id=receipt_id,
         farm_id=consent.farm_id,
         consent_id=consent.id,
         pack_id=consent.pack_id,
@@ -150,7 +166,9 @@ def _receipt(consent: ConsentRecord, kind: str, grey: bool) -> ReceiptRecord:
         kind=kind,  # type: ignore[arg-type]
         grey=grey,
     )
-    store.put("receipts", receipt.id, receipt.model_dump(mode="json"))
+    payload = receipt.model_dump(mode="json")
+    if not store.put_if_absent("receipts", receipt.id, payload):
+        return store.as_receipt(store.get("receipts", receipt.id) or payload)
     return receipt
 
 

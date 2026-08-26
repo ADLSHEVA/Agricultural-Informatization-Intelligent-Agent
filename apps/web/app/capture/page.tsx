@@ -39,12 +39,14 @@ export default function CapturePage() {
 
   useEffect(() => {
     try {
+      const requestedParcel = new URLSearchParams(window.location.search).get("parcel");
       const cached = window.localStorage.getItem(LOCAL_DRAFT_KEY);
       if (cached) {
         const saved = JSON.parse(cached);
         if (typeof saved.note === "string") setNote(saved.note);
-        if (typeof saved.parcel === "string") setParcel(saved.parcel);
+        if (!requestedParcel && typeof saved.parcel === "string") setParcel(saved.parcel);
       }
+      if (requestedParcel) setParcel(requestedParcel);
     } catch {
       // Private browsing can disable storage. Capture still works normally.
     } finally {

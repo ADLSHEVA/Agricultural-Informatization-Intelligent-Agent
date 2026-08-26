@@ -74,6 +74,15 @@ def test_sanitize_draft_drops_yield_and_revenue():
     assert pack["market"] == "US"
 
 
+def test_string_false_does_not_enable_reuse():
+    pack, _, _ = sanitize_draft(
+        {"fields": ["parcel_id"], "reuse": "false"},
+        market="US",
+        partner_id="heartland-grain",
+    )
+    assert pack["reuse"] is False
+
+
 def test_sanitize_maps_model_synonyms_onto_the_vocab():
     """Gemini names facts in its own words. Aliases must hit refuse/keep, not unknown."""
     pack, refused, unknown = sanitize_draft(
@@ -179,6 +188,26 @@ def test_empty_questionnaire_is_rejected(local_store):
     assert r.json()["detail"]["code"] == "empty_questionnaire"
 
 
+def test_unreadable_questionnaire_does_not_invent_every_field(local_store, monkeypatch):
+    from origin import config
+
+    for key in ("ORIGIN_GCP_PROJECT", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"):
+        monkeypatch.delenv(key, raising=False)
+    config.reset_settings()
+    try:
+        ensure_demo()
+        c = TestClient(app)
+        response = c.post(
+            "/v1/desk/questionnaires",
+            data={"farm_id": "demo-farm", "text": "Please sign and return."},
+            headers=PARTNER,
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "questionnaire_unreadable"
+    finally:
+        config.reset_settings()
+
+
 def test_approve_makes_the_pack_compilable(local_store):
     """Without the store overlay, approve writes a pack nobody can load."""
     ensure_demo()
@@ -207,6 +236,9 @@ def test_approve_makes_the_pack_compilable(local_store):
     assert "yield" not in loaded["fields"]
     assert partner_index()["heartland-grain"]["rule_id"] == rule_id
     assert rule_for_market("US") == rule_id
+    seeded_request = c.get("/v1/today", headers=FARMER).json()["open_request"]
+    assert seeded_request["rule_id"] == rule_id
+    assert seeded_request["field_list"] == body["pack"]["fields"]
 
     event = EventRecord(
         id="e-q",
@@ -245,8 +277,11 @@ def test_reject_is_final_and_does_not_install_a_pack(local_store):
     assert rejected.json()["state"] == "rejected"
 
     assert partner_index()["heartland-grain"]["rule_id"] == "elevator_spray_statement_v1"
-    # Unknown id falls back to the shipped US pack, not to a ghost store pack.
-    assert load_rule(rule_id)["id"] == "elevator_spray_statement_v1"
+    # A rejected/unknown id fails closed; it never falls back to another pack.
+    import pytest
+
+    with pytest.raises(KeyError):
+        load_rule(rule_id)
 
     again = c.post(f"/v1/rule-drafts/{draft_id}/approve", headers=FARMER)
     assert again.status_code == 409

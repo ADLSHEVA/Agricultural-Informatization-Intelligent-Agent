@@ -13,8 +13,10 @@ const FIELD_LABEL: Record<string, string> = {
   unit: "unit",
   buffer_m: "filter strip",
   buffer_ok: "strip check",
-  gaec4_buffer_ok: "GAEC 4 check",
 };
+
+const shown = (value: unknown) =>
+  typeof value === "boolean" ? (value ? "Pass" : "Fail") : String(value ?? "—");
 
 const SAMPLE = `HEARTLAND GRAIN LLC
 2026 Crop Year Delivery Questionnaire — Riverside Farms
@@ -37,6 +39,7 @@ export default function DeskPage() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [asking, setAsking] = useState(false);
+  const [parcel, setParcel] = useState("p3");
   const [draft, setDraft] = useState<RuleDraft | null>(null);
   const [runs, setRuns] = useState<AgentRun[]>([]);
 
@@ -88,7 +91,7 @@ export default function DeskPage() {
     setErr("");
     setMsg("");
     try {
-      const res = await api.deskRequest("demo-farm", purpose);
+      const res = await api.deskRequest("demo-farm", purpose, parcel);
       const decision = res?.agent?.decision;
       const reason = res?.agent?.reason_code;
       setMsg(
@@ -165,8 +168,13 @@ export default function DeskPage() {
       <div className="section-title"><div><p className="eyebrow">Inbox</p><h2>Current grower files</h2></div></div>
       {err && <p className="bad">{err}</p>}
       {msg && <p className="ok">{msg}</p>}
+      <label htmlFor="request-parcel">Requested field</label>
+      <select id="request-parcel" value={parcel} onChange={(event) => setParcel(event.target.value)}>
+        <option value="p3">Ditch 40 (P3)</option>
+        <option value="p4">South 40 (P4)</option>
+      </select>
       <BigButton kind="ghost" disabled={asking} onClick={() => askFarm()}>
-        {asking ? "Requesting…" : "Request current spray statement"}
+        {asking ? "Requesting…" : "Request selected field statement"}
       </BigButton>
       <BigButton
         kind="ghost"
@@ -178,17 +186,26 @@ export default function DeskPage() {
       {rows.length === 0 && !asking && <p className="muted">No file from this farm yet.</p>}
       {rows.map((r) => {
         const fields = r.pack?.fields ?? {};
-        const names: string[] = Array.isArray(fields) ? fields : Object.keys(fields);
-        const labels = names.map((n) => FIELD_LABEL[n] || n.replace(/_/g, " "));
+        const entries: Array<[string, unknown]> = Array.isArray(fields)
+          ? fields.map((name: string) => [name, "Included"])
+          : Object.entries(fields);
         const until = r.consent?.until ? `Until ${r.consent.until}` : "";
+        const purpose = String(r.consent?.purpose || "farm data statement").replace(/_/g, " ");
         return (
           <section key={r.consent?.id ?? r.pack?.id} className={`card ${r.grey ? "greyed" : ""}`}>
-            <h2>{r.grey ? "No longer available" : "This season's spray statement"}</h2>
+            <h2>{r.grey ? "No longer available" : purpose}</h2>
             {r.grey ? (
               <p className="bad">Revoked, expired, or refused — the fields are gone.</p>
             ) : (
               <>
-                <p>{labels.join(" · ") || "No fields"}</p>
+                <div className="field-table">
+                  {entries.map(([name, value]) => (
+                    <p key={name}>
+                      <span>{FIELD_LABEL[name] || name.replace(/_/g, " ")}</span>
+                      <strong>{shown(value)}</strong>
+                    </p>
+                  ))}
+                </div>
                 <p className="muted">
                   {until}
                   {until ? " · " : ""}

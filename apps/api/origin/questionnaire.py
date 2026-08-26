@@ -69,7 +69,7 @@ FIELD_ALIASES = {
 }
 
 # Which buffer check a market's pack proves compliance with.
-MARKET_BUFFER_CHECK = {"US": "buffer_ok", "EU": "gaec4_buffer_ok"}
+MARKET_BUFFER_CHECK = {"US": "buffer_ok"}
 
 _SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -79,7 +79,7 @@ def _slug(text: str, default: str) -> str:
     return out or default
 
 
-def _canonical_name(name: str) -> str:
+def canonical_name(name: str) -> str:
     """Fold a model-proposed field onto Origin's vocabulary, or leave it unknown."""
     raw = _SLUG.sub("_", str(name or "").strip().lower()).strip("_")
     if not raw:
@@ -93,7 +93,7 @@ def _canonical_name(name: str) -> str:
         return "yield"
     if toks & {"revenue", "income", "turnover"} or ("sale" in toks and "value" in toks):
         return "revenue"
-    if "buffer" in toks or "gaec" in toks or ("filter" in toks and "strip" in toks):
+    if "buffer" in toks or ("filter" in toks and "strip" in toks):
         return "buffer_m"
     if "parcel" in toks or "lpis" in toks:
         return "parcel_id"
@@ -117,14 +117,19 @@ def sanitize_draft(proposal: dict, *, market: str, partner_id: str) -> tuple[dic
     unknown. Order follows `CARRYABLE_FIELDS`, not the questionnaire's, so two
     partners asking for the same facts get byte-identical field lists.
     """
-    asked = [_canonical_name(f) for f in (proposal.get("fields") or []) if str(f).strip()]
+    asked = [canonical_name(f) for f in (proposal.get("fields") or []) if str(f).strip()]
     asked_set = set(asked)
 
     refused = [f for f in NEVER_SHARE if f in asked_set]
     kept = [f for f in CARRYABLE_FIELDS if f in asked_set]
     unknown = sorted(asked_set - set(kept) - set(refused) - set(BUFFER_KEYS))
 
-    market = market.upper() if market.upper() in MARKET_BUFFER_CHECK else "EU"
+    market = market.upper()
+    if market != "US":
+        raise HTTPException(
+            422,
+            {"code": "unsupported_market", "message": "This hackathon build supports US farms only"},
+        )
     check = MARKET_BUFFER_CHECK[market]
     # The buffer check rides along with the buffer width: a partner who wants to
     # know the strip exists gets the verdict, computed by Shapely, not claimed.
@@ -132,9 +137,7 @@ def sanitize_draft(proposal: dict, *, market: str, partner_id: str) -> tuple[dic
     if checks and "buffer_m" not in kept:
         kept.append("buffer_m")
 
-    default_purpose = (
-        "seasonal_spray_statement" if market == "US" else "seasonal_plant_protection_statement"
-    )
+    default_purpose = "seasonal_spray_statement"
     pack = {
         "id": f"{_slug(partner_id, 'partner')}_{_slug(proposal.get('purpose'), default_purpose)}_v1",
         "partner": partner_id,
@@ -142,13 +145,21 @@ def sanitize_draft(proposal: dict, *, market: str, partner_id: str) -> tuple[dic
         "market": market,
         "purpose": _slug(proposal.get("purpose"), default_purpose),
         "until": _normalise_until(proposal.get("until")),
-        "reuse": bool(proposal.get("reuse")),
+        "reuse": _as_bool(proposal.get("reuse")),
         "fields": kept + checks,
         "exclude": list(NEVER_SHARE),
         "checks": checks,
         "origin": "questionnaire_draft",
     }
     return pack, refused, unknown
+
+
+def _as_bool(raw) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return raw == 1
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _normalise_until(raw) -> str:
@@ -189,6 +200,14 @@ def propose(
         market=market,
     )
     pack, refused, unknown = sanitize_draft(proposal, market=market, partner_id=partner_id)
+    if not pack["fields"] and not refused:
+        raise HTTPException(
+            422,
+            {
+                "code": "questionnaire_unreadable",
+                "message": "No supported field request could be read; paste text or upload a text-readable file",
+            },
+        )
 
     draft = RuleDraft(
         id=f"rdr-{uuid4().hex[:10]}",
@@ -243,6 +262,15 @@ def decide(draft_id: str, farm_id: str, *, approve: bool) -> RuleDraft:
         draft.dropped_refused = [f for f in NEVER_SHARE if f in set(draft.dropped_refused) | set(refused)]
         draft.dropped_unknown = sorted(set(draft.dropped_unknown) | set(unknown))
         store.put("rule_packs", pack["id"], pack)
+        # Existing open requests from this partner must compile against the rule
+        # the farmer just approved, not the seed rule captured at request time.
+        for request in store.list_where(
+            "requests", farm_id=farm_id, partner_id=draft.partner_id, status="open"
+        ):
+            request["rule_id"] = pack["id"]
+            request["purpose"] = pack["purpose"]
+            request["field_list"] = list(pack["fields"])
+            store.put("requests", request["id"], request)
         reload_rules()
     store.put("rule_drafts", draft.id, draft.model_dump(mode="json"))
     return draft

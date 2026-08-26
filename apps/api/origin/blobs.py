@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from pathlib import Path
 
 from origin import store
 from origin.config import settings
@@ -57,6 +58,36 @@ def save_notice(*, partner_id: str, notice_id: str, payload: dict) -> str | None
         content_type="application/json",
     )
     return f"gs://{bucket.name}/{object_name}"
+
+
+def delete_uri(uri: str | None) -> None:
+    """Delete one Origin-managed object without accepting an arbitrary path."""
+    if not uri:
+        return
+    bucket = _bucket()
+    if uri.startswith("gs://"):
+        if bucket is None:
+            return
+        prefix = f"gs://{bucket.name}/"
+        if not uri.startswith(prefix):
+            raise ValueError("refusing to delete an object outside the configured bucket")
+        try:
+            bucket.blob(uri.removeprefix(prefix)).delete()
+        except Exception as exc:
+            # Lifecycle rules may have removed the object before the farmer's
+            # explicit erase. Treat only that precise case as already deleted.
+            if type(exc).__name__ != "NotFound":
+                raise
+        return
+
+    path = Path(uri).resolve()
+    root = store.DATA_DIR.resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        raise ValueError("refusing to delete a file outside Origin's data directory") from None
+    if path.is_file():
+        path.unlink()
 
 
 def wipe_evidence(farm_id: str) -> None:

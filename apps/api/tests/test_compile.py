@@ -42,12 +42,9 @@ def test_compile_excludes_yield(tmp_path, monkeypatch):
     assert "yield" not in pack.fields
     assert pack.fields["product_name"] == "X"
     assert pack.fields["buffer_ok"] is True
-    eu = compile_event(event, _parcel3(), rule_id="coop_ppp_statement_v1")
-    assert eu.fields["gaec4_buffer_ok"] is True
-    assert eu.partner_id == "loire-cereals-coop"
 
 
-def test_gaec4_fails_without_buffer(tmp_path, monkeypatch):
+def test_us_buffer_check_fails_without_buffer(tmp_path, monkeypatch):
     from origin import store
 
     monkeypatch.setattr(store, "DATA_DIR", tmp_path)

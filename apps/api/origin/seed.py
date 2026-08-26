@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from origin import store
 
 # Local projected metres. Field 3 (Ditch 40) touches the drainage ditch at y=80.
-# 5.0 m ≈ 16 ft unsprayed filter strip — US primary check; EU GAEC 4 adapter uses the same geometry.
+# 5.0 m = 16.4 ft unsprayed filter strip for the US elevator check.
 PARCELS = [
     ("p1", "North 80", "corn", 18.0, [(0, 0), (200, 0), (200, 70), (0, 70)], 0.0),
     ("p2", "Home 40", "soybeans", 14.5, [(200, 0), (400, 0), (400, 70), (200, 70)], 0.0),
@@ -22,13 +22,20 @@ def ensure_demo() -> None:
         "country": "US",
         "locale": "en",
         "display_name": "Riverside Farms (demo, Story County IA, 212 ac)",
+        "default_parcel_id": "p3",
     }
-    store.put("farms", farm["id"], farm)
+    existing_farm = store.get("farms", farm["id"])
+    if not existing_farm:
+        store.put("farms", farm["id"], farm)
+    elif not existing_farm.get("default_parcel_id"):
+        existing_farm["default_parcel_id"] = "p3"
+        store.put("farms", farm["id"], existing_farm)
     for pid, label, crop, area, ring, buf in PARCELS:
-        store.put(
-            "parcels",
-            pid,
-            {
+        if not store.get("parcels", pid):
+            store.put(
+                "parcels",
+                pid,
+                {
                 "id": pid,
                 "farm_id": "demo-farm",
                 "lpis_id": f"US-IA-STORY-{pid.upper()}",
@@ -37,13 +44,9 @@ def ensure_demo() -> None:
                 "area_ha": area,
                 "geom": {"type": "Polygon", "coordinates": [ring + [ring[0]]]},
                 "watercourse_buffer_m": buf,
-            },
-        )
-    for req in store.list_where("requests", farm_id="demo-farm", status="open"):
-        if req.get("partner_id") == "loire-cereals-coop":
-            req["status"] = "superseded"
-            store.put("requests", req["id"], req)
-    if not store.list_where("requests", farm_id="demo-farm", status="open"):
+                },
+            )
+    if not store.list_where("requests", farm_id="demo-farm"):
         created_at = datetime.now(timezone.utc).isoformat()
         store.put(
             "requests",
@@ -53,6 +56,7 @@ def ensure_demo() -> None:
                 "farm_id": "demo-farm",
                 "partner_id": "heartland-grain",
                 "partner_name": "Heartland Grain LLC",
+                "parcel_id": "p3",
                 "purpose": "seasonal_spray_statement",
                 "field_list": [
                     "parcel_id",
@@ -69,6 +73,9 @@ def ensure_demo() -> None:
             },
         )
     seed_request = store.get("requests", "req-demo-open")
+    if seed_request and not seed_request.get("parcel_id"):
+        seed_request["parcel_id"] = "p3"
+        store.put("requests", seed_request["id"], seed_request)
     if (
         seed_request
         and seed_request.get("status") == "open"

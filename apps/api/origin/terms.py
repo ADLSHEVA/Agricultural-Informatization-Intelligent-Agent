@@ -19,7 +19,7 @@ from origin import store
 from origin.compile import BUFFER_KEYS
 from origin.gemini_router import digest_terms
 from origin.models import TermsReview
-from origin.questionnaire import FIELD_ALIASES, NEVER_SHARE
+from origin.questionnaire import NEVER_SHARE, canonical_name
 
 # Longest retention Origin will call reasonable without comment. A season plus a
 # compliance year: past this the farmer is being asked for an archive, not a
@@ -32,9 +32,8 @@ def allowed_now(farm_id: str, partner_name: str) -> tuple[list[str], str | None]
 
     Matches a partner by display name because that is all the farmer has when
     pasting terms out of an email — there is no partner token in this flow. With
-    no name match it falls back to the union of every live policy, which
-    over-states what is allowed and so under-states the over-ask: the safe
-    direction to be wrong in.
+    An unmatched name gets no allowance. Guessing the union of unrelated
+    partners would under-report an over-ask.
     """
     today = date.today()
     live = [
@@ -53,10 +52,7 @@ def allowed_now(farm_id: str, partner_name: str) -> tuple[list[str], str | None]
             allowed |= set(policy.allowed_fields)
         return sorted(allowed), named[0].partner_id
 
-    allowed = set()
-    for policy in live:
-        allowed |= set(policy.allowed_fields)
-    return sorted(allowed), None
+    return [], None
 
 
 def _partner_label(partner_id: str) -> str:
@@ -78,7 +74,7 @@ def review(*, farm_id: str, text: str, partner_hint: str = "", locale: str = "en
     claimed_raw = [
         str(f).strip().lower() for f in (digest.get("fields_claimed") or []) if str(f).strip()
     ]
-    claimed = sorted({FIELD_ALIASES.get(name, name) for name in claimed_raw})
+    claimed = sorted({canonical_name(name) for name in claimed_raw})
     allowed, _matched = allowed_now(farm_id, partner_name)
     # The whole point of the card: fields they claim that no live policy covers.
     # Buffer check keys are Origin's own compliance verdicts, never a farmer fact,

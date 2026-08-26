@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
+import hashlib
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ from origin.models import EventRecord, PackRecord, Parcel
 
 RULES_DIR = Path(__file__).resolve().parent.parent / "rules"
 DEFAULT_RULE = "elevator_spray_statement_v1"
-BUFFER_KEYS = ("buffer_ok", "gaec4_buffer_ok")
+BUFFER_KEYS = ("buffer_ok",)
 
 
 @lru_cache(maxsize=1)
@@ -64,20 +65,19 @@ def load_rule(rule_id: str = DEFAULT_RULE) -> dict:
     packs = _packs()
     pack = packs.get(rule_id)
     if pack is None:
-        pack = _yaml_packs().get(DEFAULT_RULE) or packs.get(DEFAULT_RULE)
-    if pack is None:
-        raise FileNotFoundError(f"no rule pack with an id found under {RULES_DIR}")
+        raise KeyError(f"unknown rule pack: {rule_id}")
     return deepcopy(pack)
 
 
 def _partner_entry(rule_id: str, pack: dict) -> tuple[str, dict] | None:
     partner_id = str(pack.get("partner") or "").strip()
-    if not partner_id:
+    market = str(pack.get("market") or "").upper()
+    if not partner_id or market != "US":
         return None
     return partner_id, {
         "name": str(pack.get("partner_name") or partner_id),
         "rule_id": rule_id,
-        "market": str(pack.get("market") or "").upper(),
+        "market": market,
     }
 
 
@@ -101,12 +101,14 @@ def partner_index() -> dict[str, dict]:
 
 
 def rule_for_market(market: str) -> str:
-    """The pack serving a market: `US` -> elevator, `EU` -> co-op.
+    """Return the active US default pack and reject unsupported markets.
 
     A store pack for the same partner as the shipped market pack replaces it.
     A newly onboarded partner does not steal the market default.
     """
     wanted = market.upper()
+    if wanted != "US":
+        raise KeyError(f"unsupported market: {market}")
     shipped_id = DEFAULT_RULE
     shipped_partner = ""
     for rule_id, pack in _yaml_packs().items():
@@ -121,7 +123,9 @@ def rule_for_market(market: str) -> str:
         for rule_id, pack in stored.items():
             if str(pack.get("partner") or "") == shipped_partner:
                 return rule_id
-    return shipped_id
+    if shipped_partner:
+        return shipped_id
+    raise KeyError("no shipped US rule pack is configured")
 
 
 def _buffer_field(rule: dict) -> str | None:
@@ -139,9 +143,19 @@ def compile_event(
     *,
     requested_fields: list[str] | None = None,
     purpose: str | None = None,
+    idempotency_key: str | None = None,
 ) -> PackRecord:
     """YAML + geometry only. Gemini never runs here."""
     rule = load_rule(rule_id)
+    pack_id = (
+        f"pack-{hashlib.sha256(idempotency_key.encode()).hexdigest()[:10]}"
+        if idempotency_key
+        else f"pack-{uuid4().hex[:10]}"
+    )
+    if idempotency_key:
+        existing = store.get("packs", pack_id)
+        if existing:
+            return store.as_pack(existing)
     source = {
         "parcel_id": event.parcel_id,
         "date": event.time.date().isoformat(),
@@ -172,7 +186,7 @@ def compile_event(
         fields.pop(banned, None)
 
     pack = PackRecord(
-        id=f"pack-{uuid4().hex[:10]}",
+        id=pack_id,
         farm_id=event.farm_id,
         event_ids=[event.id],
         rule_id=rule["id"],
@@ -182,5 +196,9 @@ def compile_event(
         checks=checks,
         created_at=datetime.now(timezone.utc),
     )
-    store.put("packs", pack.id, pack.model_dump(mode="json"))
+    payload = pack.model_dump(mode="json")
+    if idempotency_key and not store.put_if_absent("packs", pack.id, payload):
+        return store.as_pack(store.get("packs", pack.id) or payload)
+    if not idempotency_key:
+        store.put("packs", pack.id, payload)
     return pack

@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     api_base_url: str = ""
     task_service_account: str = ""
     internal_token: str = ""
+    require_worker_oidc: bool = False
 
     # Optional real partner destination. Cloud Storage delivery is enabled by
     # `bucket`; this webhook adds an integration with the partner's own system.
@@ -60,6 +61,9 @@ class Settings(BaseSettings):
     firebase_project_id: str = ""
     demo_tokens: bool = True
     seed_demo: bool = True
+    # Public hackathon deployments are an isolated, shared tenant. Interactive
+    # writes remain available, but destructive account erasure is disabled.
+    shared_demo: bool = False
 
     # --- web ------------------------------------------------------------------
     # Comma-separated. Both loopback spellings by default: the browser sends

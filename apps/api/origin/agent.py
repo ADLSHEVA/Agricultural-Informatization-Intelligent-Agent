@@ -8,11 +8,13 @@ It never decides whether to share.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from origin import consent, deliver, store
-from origin.compile import compile_event, partner_index, rule_for_market
+from origin.compile import compile_event, load_rule, partner_index, rule_for_market
 from origin.gemini_router import narrate_decision
 from origin.models import ConsentRecord, EventRecord, PartnerRequest, StandingPolicy
 
@@ -20,7 +22,6 @@ from origin.models import ConsentRecord, EventRecord, PartnerRequest, StandingPo
 # stops the UI printing a bare slug. The YAML packs are the source of truth.
 FALLBACK_PARTNER_NAMES = {
     "heartland-grain": "Heartland Grain LLC",
-    "loire-cereals-coop": "Loire Cereals Co-op",
 }
 
 
@@ -32,22 +33,30 @@ def partner_display(partner_id: str) -> str:
 
 
 def default_rule_for_farm(farm: dict | None) -> str:
-    """Pick a pack by where the farm is. The only jurisdiction test in the code.
-
-    Everything else about a market lives in the YAML. An unknown country reads
-    as EU because its pack has the more conservative sharing defaults; the
-    Google hackathon demo itself uses the seeded US farm.
-    """
+    """Select the US pack and fail closed for unsupported/unknown markets."""
     country = str((farm or {}).get("country") or "").upper()
-    return rule_for_market("US" if country == "US" else "EU")
+    if country != "US":
+        raise HTTPException(
+            422,
+            {
+                "code": "unsupported_market",
+                "message": "This hackathon build supports US farms only",
+            },
+        )
+    return rule_for_market("US")
 
 
 def default_rule_for(partner_id: str, farm: dict | None = None) -> str:
-    """The pack this partner asks under; an unknown partner falls back to market."""
+    """The approved pack for a known partner; unknown partners fail closed."""
     entry = partner_index().get(partner_id)
     if entry:
+        if entry.get("market") != "US":
+            return default_rule_for_farm(farm)
         return entry["rule_id"]
-    return default_rule_for_farm(farm)
+    raise HTTPException(
+        422,
+        {"code": "unknown_partner", "message": "No approved US rule exists for this partner"},
+    )
 
 
 def activate_standing(bound: ConsentRecord) -> StandingPolicy:
@@ -55,7 +64,7 @@ def activate_standing(bound: ConsentRecord) -> StandingPolicy:
     if existing:
         return store.as_policy(existing[0])
     policy = StandingPolicy(
-        id=f"pol-{uuid4().hex[:10]}",
+        id=f"pol-{bound.id.removeprefix('cns-')}",
         farm_id=bound.farm_id,
         partner_id=bound.partner_id,
         purpose=bound.purpose,
@@ -65,7 +74,9 @@ def activate_standing(bound: ConsentRecord) -> StandingPolicy:
         state="active",
         created_from_consent_id=bound.id,
     )
-    store.put("policies", policy.id, policy.model_dump(mode="json"))
+    payload = policy.model_dump(mode="json")
+    if not store.put_if_absent("policies", policy.id, payload):
+        return store.as_policy(store.get("policies", policy.id) or payload)
     return policy
 
 
@@ -115,8 +126,9 @@ def expire_policies_if_due() -> None:
             store.put("policies", row["id"], row)
 
 
-def latest_confirmed(farm_id: str) -> EventRecord | None:
+def latest_confirmed(farm_id: str, parcel_id: str) -> EventRecord | None:
     rows = store.list_where("events", farm_id=farm_id, status="confirmed")
+    rows = [row for row in rows if row.get("parcel_id") == parcel_id]
     if not rows:
         return None
     events = [store.as_event(row) for row in rows]
@@ -191,6 +203,11 @@ def fulfill_pack(
             }
         ) | {"mode": "ask", "consent": draft}
 
+    # A newly compiled consent can never outlive the standing box that made it
+    # automatic, even when a questionnaire expresses its expiry as +Nd.
+    if draft.until > policy.until:
+        draft.until = policy.until
+        store.put("consents", draft.id, draft.model_dump(mode="json"))
     bound = consent.bind(draft)
     token, receipt = deliver.issue(bound)
     return _write_log(
@@ -224,7 +241,7 @@ def _link(request_id: str) -> None:
         store.put("requests", request_id, row)
 
 
-def tick_request(req: PartnerRequest) -> dict:
+def tick_request(req: PartnerRequest, *, event_id: str | None = None) -> dict:
     """Run one open partner request to a decision. No chat. No Gemini on share/no-share."""
     farm = store.get("farms", req.farm_id) or {}
     locale = farm.get("locale", "en")
@@ -250,7 +267,21 @@ def tick_request(req: PartnerRequest) -> dict:
             }
         ) | {"mode": "need_capture"}
 
-    event = latest_confirmed(req.farm_id)
+    parcel_id = req.parcel_id or str(farm.get("default_parcel_id") or "")
+    if not parcel_id:
+        return _blocked("partner request does not identify a field")
+    if event_id:
+        event_row = store.get("events", event_id)
+        event = (
+            store.as_event(event_row)
+            if event_row
+            and event_row.get("farm_id") == req.farm_id
+            and event_row.get("parcel_id") == parcel_id
+            and event_row.get("status") == "confirmed"
+            else None
+        )
+    else:
+        event = latest_confirmed(req.farm_id, parcel_id)
     if event is None:
         return _blocked("no confirmed field fact to compile")
 
@@ -258,7 +289,14 @@ def tick_request(req: PartnerRequest) -> dict:
     if not parcel_row:
         return _blocked("confirmed event points at an unknown field")
 
-    rule_id = req.rule_id or default_rule_for(req.partner_id, farm)
+    # Resolve the partner's active approved rule at execution time. A request
+    # opened before questionnaire approval must not stay pinned to seed YAML.
+    rule_id = default_rule_for(req.partner_id, farm)
+    active_rule = load_rule(rule_id)
+    if req.rule_id != rule_id or req.field_list != list(active_rule["fields"]):
+        req.rule_id = rule_id
+        req.field_list = list(active_rule["fields"])
+        store.put("requests", req.id, req.model_dump(mode="json"))
 
     # A card for exactly this fact may already be waiting on the farmer. Reuse
     # it — a second ask must not stack another pack and draft in the wallet.
@@ -325,9 +363,15 @@ def tick_request(req: PartnerRequest) -> dict:
         rule_id=rule_id,
         requested_fields=req.field_list,
         purpose=req.purpose,
+        idempotency_key=(
+            f"{req.id}:{event.id}:{rule_id}:{req.purpose}:"
+            f"{','.join(sorted(req.field_list))}"
+        ),
     )
     result = fulfill_pack(pack=pack, request_id=req.id, locale=locale)
-    if result.get("mode") in {"auto", "ask"}:
+    # A consent card is a durable checkpoint and may leave the request linked.
+    # Auto delivery becomes terminal only after the destination succeeds.
+    if result.get("mode") == "ask":
         _link(req.id)
     return result
 
@@ -340,11 +384,18 @@ def tick_farm(farm_id: str) -> list[dict]:
 
 
 def last_auto(farm_id: str) -> dict | None:
-    rows = [r for r in store.list_where("agent_log", farm_id=farm_id) if r.get("decision") == "auto_deliver"]
+    rows = store.list_where("agent_log", farm_id=farm_id)
     if not rows:
         return None
     rows.sort(key=lambda r: r.get("at", ""), reverse=True)
-    return rows[0]
+    latest = rows[0]
+    if latest.get("decision") != "auto_deliver":
+        return None
+    try:
+        happened = datetime.fromisoformat(str(latest.get("at") or ""))
+    except ValueError:
+        return None
+    return latest if datetime.now(timezone.utc) - happened <= timedelta(minutes=10) else None
 
 
 def last_decision(farm_id: str) -> dict | None:

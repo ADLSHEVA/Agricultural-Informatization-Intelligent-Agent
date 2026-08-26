@@ -49,7 +49,7 @@ def test_sunday_loop(tmp_path, monkeypatch):
     assert not any(not row["grey"] for row in desk2.json())
 
 
-def test_double_confirm_is_refused_not_duplicated(local_store):
+def test_double_confirm_resumes_without_duplication(local_store):
     """A retry or double tap must not compile a second pack / open a second
     consent for the same fact."""
     from origin import store
@@ -66,8 +66,9 @@ def test_double_confirm_is_refused_not_duplicated(local_store):
     first = c.post(f"/v1/events/{eid}/confirm", json={"rate": 1.2}, headers=h)
     assert first.status_code == 200, first.text
     again = c.post(f"/v1/events/{eid}/confirm", json={"rate": 1.2}, headers=h)
-    assert again.status_code == 409
-    assert again.json()["detail"]["code"] == "already_confirmed"
+    assert again.status_code == 200, again.text
+    assert again.json()["pack"]["id"] == first.json()["pack"]["id"]
+    assert again.json()["consent"]["id"] == first.json()["consent"]["id"]
     assert len(store.list_where("packs", farm_id="demo-farm")) == 1
     assert len(store.list_where("consents", farm_id="demo-farm")) == 1
 
@@ -107,6 +108,28 @@ def test_desk_request_unknown_farm_is_404(local_store):
     assert not store.list_where("agent_log", farm_id="no-such-farm")
 
 
+def test_today_returns_every_open_request(local_store):
+    ensure_demo()
+    c = TestClient(app)
+    partner = {"Authorization": "Bearer demo-partner"}
+    farmer = {"Authorization": "Bearer demo-farmer"}
+    second = c.post(
+        "/v1/desk/requests",
+        json={
+            "farm_id": "demo-farm",
+            "parcel_id": "p4",
+            "purpose": "residue_statement",
+        },
+        headers=partner,
+    )
+    assert second.status_code == 200, second.text
+    today = c.get("/v1/today", headers=farmer).json()
+    assert {row["id"] for row in today["open_requests"]} == {
+        "req-demo-open",
+        second.json()["id"],
+    }
+
+
 def test_post_event_requires_a_parcel(local_store):
     """A missing or blank parcel must fail loudly, never land silently on p3."""
     ensure_demo()
@@ -143,9 +166,10 @@ def test_reuse_off_blocks_second_bind_of_the_same_pack(local_store):
     assert third.status_code == 409
 
 
-def test_erase_leaves_hash_only_stubs(local_store):
-    """Art. 17 promise: after erase, nothing readable of the shared content
-    survives anywhere the API can hand back — but the hash does."""
+def test_erase_leaves_hash_only_stubs(local_store, monkeypatch):
+    """After erase, API receipts and deliveries retain proofs, not payloads."""
+    from origin import blobs, store
+
     ensure_demo()
     c = TestClient(app)
     h = {"Authorization": "Bearer demo-farmer"}
@@ -156,6 +180,12 @@ def test_erase_leaves_hash_only_stubs(local_store):
     pack_id = conf.json()["pack"]["id"]
     cid = conf.json()["consent"]["id"]
     assert c.post(f"/v1/consents/{cid}/bind", json={}, headers=h).status_code == 200
+    delivery = store.list_where("deliveries", farm_id="demo-farm")[0]
+    delivery["object_uri"] = "gs://origin-test/partner-inbox/private.json"
+    store.put("deliveries", delivery["id"], delivery)
+    store.put("terms_reviews", "terms-private", {"id": "terms-private", "farm_id": "demo-farm", "source_excerpt": "private clause"})
+    deleted_uris = []
+    monkeypatch.setattr(blobs, "delete_uri", lambda uri: deleted_uris.append(uri) if uri else None)
     erased = c.request("DELETE", "/v1/me", headers=h)
     assert erased.status_code == 200
     export = c.get("/v1/me/export", headers=h).json()
@@ -163,12 +193,60 @@ def test_erase_leaves_hash_only_stubs(local_store):
     for receipt in export["receipts"]:
         assert receipt["field_list"] == []
         assert receipt["pack_hash"]  # the proof survives
-        assert receipt["partner_name"]  # Who still shows who had it
+        assert receipt["partner_name"]  # Sharing still shows who had it
     assert {row["state"] for row in export["consents"]} == {"erased"}
-    assert export["events"][0]["product_name"] == ""
+    assert export["events"] == []
+    assert all(row["event_ids"] == [] for row in export["packs"])
+    api_receipts = c.get("/v1/receipts", headers=h).json()
+    assert api_receipts[0]["delivery"]["pack"]["fields"] == {}
+    assert "product X" not in repr(api_receipts)
+    assert deleted_uris == ["gs://origin-test/partner-inbox/private.json"]
+    assert all(row.get("status") == "origin_copy_erased" for row in store.list_where("deliveries", farm_id="demo-farm"))
+    assert not store.list_where("agent_log", farm_id="demo-farm")
+    assert not store.list_where("agent_runs", farm_id="demo-farm")
+    assert not store.list_where("terms_reviews", farm_id="demo-farm")
+    assert not store.list_where("requests", farm_id="demo-farm")
+    assert not store.list_where("tokens", farm_id="demo-farm")
     # And the desk is locked out.
     desk = c.get(f"/v1/desk/packs/{pack_id}", headers=p)
     assert desk.status_code == 410
+
+
+def test_shared_demo_cannot_erase_the_seed_tenant(local_store, monkeypatch):
+    from origin import config, store
+
+    monkeypatch.setenv("ORIGIN_SHARED_DEMO", "true")
+    config.reset_settings()
+    try:
+        ensure_demo()
+        c = TestClient(app)
+        erased = c.request(
+            "DELETE", "/v1/me", headers={"Authorization": "Bearer demo-farmer"}
+        )
+        assert erased.status_code == 403
+        assert erased.json()["detail"]["code"] == "shared_demo_protected"
+        assert store.get("farms", "demo-farm")
+        assert store.get("requests", "req-demo-open")
+    finally:
+        config.reset_settings()
+
+
+def test_demo_seed_is_non_destructive_after_first_install(local_store):
+    from origin import store
+
+    ensure_demo()
+    parcel = store.get("parcels", "p3")
+    parcel["label"] = "Farmer-renamed field"
+    store.put("parcels", "p3", parcel)
+    request = store.get("requests", "req-demo-open")
+    request["status"] = "completed"
+    store.put("requests", request["id"], request)
+
+    ensure_demo()
+
+    assert store.get("parcels", "p3")["label"] == "Farmer-renamed field"
+    assert store.get("requests", "req-demo-open")["status"] == "completed"
+    assert not store.list_where("requests", farm_id="demo-farm", status="open")
 
 
 def test_desk_inbox_orders_by_pack_creation(local_store):
@@ -249,8 +327,10 @@ def test_repeat_asks_reuse_the_card_then_the_live_file(local_store):
 
     ask1 = c.post("/v1/desk/requests", json={"farm_id": "demo-farm"}, headers=p)
     assert ask1.status_code == 200, ask1.text
+    assert ask1.json()["reused"] is True
+    assert ask1.json()["id"] == "req-demo-open"
     assert ask1.json()["agent"]["decision"] == "ask_farmer"
-    assert ask1.json()["agent"]["reason_code"] == "pending_decision"
+    assert ask1.json()["agent"]["consent_id"] == cid
     assert ask1.json()["agent"]["consent_id"] == cid
     drafts = [x for x in store.list_where("consents", farm_id="demo-farm") if x["state"] == "draft"]
     assert len(drafts) == 1
@@ -314,3 +394,27 @@ def test_dead_token_hides_the_pack_even_before_the_state_flips(local_store):
     store.put("tokens", tok["id"], tok)
     r = c.get(f"/v1/desk/packs/{pack_id}", headers=p)
     assert r.status_code == 410
+
+
+def test_receipts_lazily_expire_access_without_a_desk_visit(local_store):
+    from origin import store
+
+    ensure_demo()
+    c = TestClient(app)
+    h = {"Authorization": "Bearer demo-farmer"}
+    event = c.post(
+        "/v1/events", data={"parcel_id": "p3", "note": "product X"}, headers=h
+    ).json()
+    result = c.post(
+        f"/v1/events/{event['id']}/confirm", json={"rate": 1.2}, headers=h
+    ).json()
+    consent_id = result["consent"]["id"]
+    assert c.post(f"/v1/consents/{consent_id}/bind", json={}, headers=h).status_code == 200
+    row = store.get("consents", consent_id)
+    row["until"] = "2000-01-01"
+    store.put("consents", consent_id, row)
+
+    receipts = c.get("/v1/receipts", headers=h)
+    assert receipts.status_code == 200
+    assert receipts.json()[0]["grey"] is True
+    assert store.get("consents", consent_id)["state"] == "expired"

@@ -96,10 +96,10 @@ export const api = {
   exportMe: () => req("/v1/me/export"),
   eraseMe: () => req("/v1/me", { method: "DELETE" }),
   deskPacks: () => req("/v1/desk/packs", {}, PARTNER_TOKEN),
-  deskRequest: (farmId = "demo-farm", purpose?: string) =>
+  deskRequest: (farmId = "demo-farm", purpose?: string, parcelId = "p3") =>
     req(
       "/v1/desk/requests",
-      { method: "POST", body: JSON.stringify({ farm_id: farmId, ...(purpose ? { purpose } : {}) }) },
+      { method: "POST", body: JSON.stringify({ farm_id: farmId, parcel_id: parcelId, ...(purpose ? { purpose } : {}) }) },
       PARTNER_TOKEN,
     ),
   deskRuns: () => req("/v1/desk/agent-runs", {}, PARTNER_TOKEN) as Promise<AgentRun[]>,

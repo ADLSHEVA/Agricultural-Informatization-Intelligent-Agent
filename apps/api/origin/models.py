@@ -76,6 +76,10 @@ class ConsentRecord(BaseModel):
     locale: str = "en"
     plain_talk: PlainTalk | None = None
     request_id: str | None = None
+    # Captured while the card is still a draft. A retry may finish the same
+    # choice, but an already-bound consent cannot later be elevated to standing
+    # permission by changing the second POST body.
+    standing_requested: bool = False
 
 
 class ReceiptRecord(BaseModel):
@@ -84,7 +88,7 @@ class ReceiptRecord(BaseModel):
     consent_id: str
     pack_id: str
     partner_name: str
-    # Stable grouping key for the Who page; empty on rows written before it
+    # Stable grouping key for the Sharing page; empty on older rows
     # existed (the UI falls back to partner_name for those).
     partner_id: str = ""
     purpose: str = ""
@@ -110,10 +114,11 @@ class PartnerRequest(BaseModel):
     farm_id: str
     partner_id: str
     partner_name: str
+    parcel_id: str | None = None
     purpose: str
     field_list: list[str]
     rule_id: str = "elevator_spray_statement_v1"
-    status: Literal["open", "linked", "superseded"] = "open"
+    status: Literal["open", "linked", "completed", "refused", "superseded"] = "open"
     created_at: datetime
 
 
@@ -183,7 +188,7 @@ class RuleDraft(BaseModel):
     farm_id: str
     partner_id: str
     partner_name: str
-    market: str = "EU"
+    market: str = "US"
     source_excerpt: str = ""
     pack: dict
     dropped_refused: list[str] = Field(default_factory=list)
@@ -256,8 +261,9 @@ class BindBody(BaseModel):
 
 class DeskRequestBody(BaseModel):
     farm_id: str
-    # Default: whatever the partner's own rule pack asks for. Hard-coding a US
-    # purpose here would mislabel every EU request on the farmer's Today card.
+    # A partner request is for a field, never for whichever farm event happened
+    # most recently. Demo farms may publish a default field when this is omitted.
+    parcel_id: str | None = None
     purpose: str | None = None
 
 

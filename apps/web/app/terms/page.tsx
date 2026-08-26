@@ -55,7 +55,7 @@ export default function TermsPage() {
         <h1>Understand their data terms.</h1>
         <p className="muted">
           Gemini highlights resale, retention, third parties, and fields claimed. This is a reading, not consent; nothing is shared from this screen.{" "}
-          <Link href="/receipts">Back to Who</Link>
+          <Link href="/receipts">Back to Sharing</Link>
         </p>
       </div>
 

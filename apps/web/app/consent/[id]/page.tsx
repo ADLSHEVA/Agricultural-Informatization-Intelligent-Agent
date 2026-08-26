@@ -51,7 +51,6 @@ export default function ConsentPage() {
     unit: "Unit",
     buffer_m: "Filter strip",
     buffer_ok: "Filter-strip check",
-    gaec4_buffer_ok: "GAEC 4 check",
   };
   const shown = (value: any) => (typeof value === "boolean" ? (value ? "Pass" : "Fail") : String(value ?? "—"));
   return (

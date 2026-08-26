@@ -20,8 +20,8 @@ from origin import (
     store,
     terms,
 )
-from origin.auth import farmer_only, partner_only, principal
-from origin.compile import compile_event, load_rule
+from origin.auth import farmer_only, partner_only, principal, verify_worker_oidc
+from origin.compile import load_rule
 from origin.config import settings
 from origin.models import (
     BindBody,
@@ -52,6 +52,43 @@ app.add_middleware(
 )
 
 
+def _request_parcel(row: dict, farm: dict) -> str:
+    """Read migrated requests without ever falling back to the latest event."""
+    return str(row.get("parcel_id") or farm.get("default_parcel_id") or "")
+
+
+def _requests_for_parcel(farm_id: str, parcel_id: str, statuses: set[str]) -> list[dict]:
+    farm = store.get("farms", farm_id) or {}
+    rows = [
+        row
+        for row in store.list_where("requests", farm_id=farm_id)
+        if row.get("status") in statuses and _request_parcel(row, farm) == parcel_id
+    ]
+    rows.sort(key=lambda row: str(row.get("created_at") or ""))
+    return rows
+
+
+def _request_for_event(farm_id: str, event_id: str, parcel_id: str) -> dict | None:
+    """Prefer the request already tied to this fact, then the oldest open ask."""
+    for row in store.list_where("consents", farm_id=farm_id):
+        pack = store.get("packs", str(row.get("pack_id") or "")) or {}
+        request = store.get("requests", str(row.get("request_id") or ""))
+        if (
+            event_id in (pack.get("event_ids") or [])
+            and request
+            and request.get("status") in {"open", "linked"}
+            and _request_parcel(request, store.get("farms", farm_id) or {}) == parcel_id
+        ):
+            return request
+    rows = _requests_for_parcel(farm_id, parcel_id, {"open"})
+    return rows[0] if rows else None
+
+
+def _expire_farm_consents(farm_id: str) -> None:
+    for row in store.list_where("consents", farm_id=farm_id):
+        consent.expire_if_due(store.as_consent(row))
+
+
 @app.get("/health")
 def health() -> dict:
     cfg = settings()
@@ -61,6 +98,7 @@ def health() -> dict:
         "version": app.version,
         "store": cfg.store,
         "agent_dispatch": cfg.agent_dispatch,
+        "shared_demo": cfg.shared_demo,
         "vertex": {
             "configured": cfg.vertex_ready,
             "model": cfg.gemini_model,
@@ -73,6 +111,7 @@ def health() -> dict:
 def today(who: Principal = Depends(principal)) -> dict:
     farmer_only(who)
     agent.expire_policies_if_due()
+    _expire_farm_consents(who.farm_id)
     farm = store.get("farms", who.farm_id)
     parcels = store.list_where("parcels", farm_id=who.farm_id)
     # Longest waiting first — dict order would make the visible card random.
@@ -92,7 +131,9 @@ def today(who: Principal = Depends(principal)) -> dict:
         "farm": farm,
         "parcels": parcels,
         "open_request": open_reqs[0] if open_reqs else None,
+        "open_requests": open_reqs,
         "draft_consent": drafts[0] if drafts else None,
+        "draft_consents": drafts,
         "standing_policies": policies,
         "last_auto": agent.last_auto(who.farm_id),
         "last_decision": agent.last_decision(who.farm_id),
@@ -125,10 +166,7 @@ async def post_event(
             },
         )
     source = "voice" if audio_bytes else "photo" if image_bytes else "note"
-    open_reqs = sorted(
-        store.list_where("requests", farm_id=who.farm_id, status="open"),
-        key=lambda row: str(row.get("created_at") or ""),
-    )
+    open_reqs = _requests_for_parcel(who.farm_id, parcel_id, {"open"})
     request_id = open_reqs[0]["id"] if open_reqs else None
     with runs.request_trace(request_id):
         event = capture.create_draft(
@@ -161,33 +199,32 @@ def confirm_event(
     row = store.get("events", event_id)
     if not row or row.get("farm_id") != who.farm_id:
         raise HTTPException(404, {"code": "not_found", "message": "Event not found"})
-    if row.get("status") == "confirmed":
-        # One event, one outcome. A retry (double tap, lost response) must not
-        # compile a second pack and open a second consent for the same fact.
-        raise HTTPException(
-            409,
-            {"code": "already_confirmed", "message": "Event was already confirmed"},
-        )
     patch = body.model_dump(exclude_unset=True)
     # Resolve the parcel before anything is written. A failed confirm must not
     # leave a confirmed event behind — the agent would wedge into need_capture
     # forever with nothing on Today explaining why.
     target_parcel = patch.get("parcel_id") or row["parcel_id"]
+    if row.get("status") == "confirmed" and target_parcel != row.get("parcel_id"):
+        raise HTTPException(
+            409,
+            {"code": "already_confirmed", "message": "A confirmed event cannot move fields"},
+        )
     parcel_row = store.get("parcels", target_parcel)
-    if not parcel_row:
+    if not parcel_row or parcel_row.get("farm_id") != who.farm_id:
         raise HTTPException(
             400,
             {"code": "bad_parcel", "message": f"Unknown parcel {target_parcel}"},
         )
-    # exclude_unset: only the fields the farmer actually edited. Sending the
-    # whole model would arrive as a wall of nulls and blank the untouched ones.
-    event = capture.confirm(store.as_event(row), **patch)
-    farm = store.get("farms", who.farm_id) or {}
-    open_reqs = sorted(
-        store.list_where("requests", farm_id=who.farm_id, status="open"),
-        key=lambda request: str(request.get("created_at") or ""),
+    # A lost response or double tap resumes the same confirmed fact. It never
+    # recompiles merely because the HTTP call was repeated.
+    event = (
+        store.as_event(row)
+        if row.get("status") == "confirmed"
+        else capture.confirm(store.as_event(row), **patch)
     )
-    if not open_reqs:
+    farm = store.get("farms", who.farm_id) or {}
+    request = _request_for_event(who.farm_id, event.id, event.parcel_id)
+    if not request:
         # Capturing a fact is not permission to publish it. Keep the confirmed
         # event ready; a future partner request may use standing permission.
         return {
@@ -202,33 +239,20 @@ def confirm_event(
                 "note": "Fact confirmed. No partner request is open, so nothing was sent.",
             },
         }
-    req_id = open_reqs[0]["id"] if open_reqs else None
-    # No open request means no partner asked, so the pack follows the farm's
-    # market — a US default here would hand an EU farm the elevator pack.
-    rule_id = (open_reqs[0].get("rule_id") if open_reqs else None) or agent.default_rule_for_farm(farm)
-    request = open_reqs[0] if open_reqs else None
-    pack = compile_event(
-        event,
-        store.as_parcel(parcel_row),
-        rule_id=rule_id,
-        requested_fields=request.get("field_list") if request else None,
-        purpose=request.get("purpose") if request else None,
-    )
-    if req_id:
-        req = open_reqs[0]
-        req["status"] = "linked"
-        store.put("requests", req_id, req)
+    req_id = request["id"]
     with runs.request_trace(req_id):
-        result = agent.fulfill_pack(
-            pack=pack,
-            request_id=req_id,
-            locale=farm.get("locale", "en"),
-        )
+        result = agent.tick_request(store.as_request(request), event_id=event.id)
         runs.complete_from_result(req_id, result)
+    consent_obj = result.get("consent")
+    pack_row = (
+        store.get("packs", consent_obj.pack_id)
+        if consent_obj is not None and getattr(consent_obj, "pack_id", None)
+        else None
+    )
     payload = {
         "event": event.model_dump(mode="json"),
-        "pack": pack.model_dump(mode="json"),
-        "consent": result["consent"].model_dump(mode="json"),
+        "pack": pack_row,
+        "consent": consent_obj.model_dump(mode="json") if consent_obj else None,
         "auto": result.get("mode") == "auto",
         "agent": {
             k: result.get(k)
@@ -236,7 +260,12 @@ def confirm_event(
         },
     }
     if result.get("mode") == "auto":
-        payload["receipt"] = result["receipt"].model_dump(mode="json")
+        receipt_obj = result.get("receipt")
+        if receipt_obj is not None:
+            payload["receipt"] = receipt_obj.model_dump(mode="json")
+        elif consent_obj is not None:
+            receipts = store.list_where("receipts", consent_id=consent_obj.id)
+            payload["receipt"] = receipts[0] if receipts else None
     return payload
 
 
@@ -305,11 +334,15 @@ def bind_consent(
     row = store.get("consents", consent_id)
     if not row or row.get("farm_id") != who.farm_id:
         raise HTTPException(404, {"code": "not_found", "message": "Consent not found"})
-    bound = consent.bind(store.as_consent(row))
+    record = store.as_consent(row)
+    if record.state == "draft":
+        record.standing_requested = bool(body and body.standing)
+        store.put("consents", record.id, record.model_dump(mode="json"))
+    bound = consent.bind(record)
     token, receipt = deliver.issue(bound)
     pack = store.get("packs", bound.pack_id)
     passport = deliver.lot_passport(bound, store.as_pack(pack))
-    policy = agent.activate_standing(bound) if body and body.standing else None
+    policy = agent.activate_standing(bound) if bound.standing_requested else None
     delivery = runs.complete_manual_consent(bound)
     return {
         "consent": bound.model_dump(mode="json"),
@@ -353,6 +386,8 @@ def revoke_consent(consent_id: str, who: Principal = Depends(principal)) -> dict
 @app.get("/v1/receipts")
 def list_receipts(who: Principal = Depends(principal)) -> list[dict]:
     farmer_only(who)
+    agent.expire_policies_if_due()
+    _expire_farm_consents(who.farm_id)
     rows = store.list_where("receipts", farm_id=who.farm_id)
     rows.sort(key=lambda r: r.get("issued_at", ""), reverse=True)
     return [
@@ -378,15 +413,10 @@ def review_terms(body: TermsReviewBody, who: Principal = Depends(principal)) -> 
 def export_me(who: Principal = Depends(principal)) -> dict:
     farmer_only(who)
     farm = store.get("farms", who.farm_id) or {}
-    us = farm.get("country") == "US"
     return {
         "kind": "portable_pack",
-        "article": "US farm-data originator portable copy" if us else "GDPR Art. 20",
-        "basis": (
-            ["Ag Data Transparent principles", "farmer as data originator"]
-            if us
-            else ["GDPR Art. 20", "EU Code of Conduct data originator"]
-        ),
+        "article": "US farm-data originator portable copy",
+        "basis": ["Ag Data Transparent principles", "farmer as data originator"],
         "farm": farm,
         "parcels": store.list_where("parcels", farm_id=who.farm_id),
         "events": store.list_where("events", farm_id=who.farm_id),
@@ -400,9 +430,20 @@ def export_me(who: Principal = Depends(principal)) -> dict:
 @app.delete("/v1/me")
 def erase_me(who: Principal = Depends(principal)) -> dict:
     farmer_only(who)
+    if settings().shared_demo:
+        raise HTTPException(
+            403,
+            {
+                "code": "shared_demo_protected",
+                "message": "Erasure is disabled in the public shared demo tenant",
+            },
+        )
     # Notify recipients before scrubbing the packs that identify what was sent.
     for row in store.list_where("consents", farm_id=who.farm_id):
-        if row.get("state") == "purpose-bound":
+        if (
+            row.get("state") in {"purpose-bound", "revoked", "expired"}
+            and partner_delivery.for_consent(row["id"])
+        ):
             record = store.as_consent(row)
             pack_row = store.get("packs", record.pack_id)
             partner_delivery.send_notice(
@@ -411,21 +452,28 @@ def erase_me(who: Principal = Depends(principal)) -> dict:
                 store.as_pack(pack_row) if pack_row else None,
             )
     capture.wipe_evidence(who.farm_id)
+    delivery_count = partner_delivery.erase_origin_copy(who.farm_id)
+    run_rows = store.list_where("agent_runs", farm_id=who.farm_id)
+    trace_ids = {str(row.get("trace_id") or "") for row in run_rows}
     for ev in store.list_where("events", farm_id=who.farm_id):
-        ev["note"] = ""
-        ev["product_name"] = ""
-        ev["rate"] = None
-        ev["evidence_uris"] = []
-        store.put("events", ev["id"], ev)
+        provenance = ev.get("provenance") if isinstance(ev.get("provenance"), dict) else {}
+        trace_ids.add(str(provenance.get("trace_id") or ""))
+        store.delete("events", ev["id"])
     for c in store.list_where("consents", farm_id=who.farm_id):
         c["state"] = "erased"
         c["plain_talk"] = None
+        c["fields"] = []
+        c["request_id"] = None
+        c["standing_requested"] = False
         store.put("consents", c["id"], c)
         consent._disable_tokens(c["id"])
         consent._grey_receipts(c["id"])
+        for token in store.list_where("tokens", consent_id=c["id"]):
+            store.delete("tokens", token["id"])
     # Packs hold copied field values (product, rate). The events were scrubbed
     # above; leaving the same values in packs would make erase cosmetic.
     for p in store.list_where("packs", farm_id=who.farm_id):
+        p["event_ids"] = []
         p["fields"] = {}
         p["checks"] = {}
         store.put("packs", p["id"], p)
@@ -436,11 +484,25 @@ def erase_me(who: Principal = Depends(principal)) -> dict:
         store.put("receipts", r["id"], r)
     for policy in store.list_where("policies", farm_id=who.farm_id):
         policy["state"] = "revoked"
+        policy["allowed_fields"] = []
         store.put("policies", policy["id"], policy)
+    # Model traces and uploaded source text are operational data, not receipt
+    # proofs. Remove them instead of leaving farmer notes in secondary tables.
+    for collection in ("agent_log", "rule_drafts", "terms_reviews"):
+        for row in store.list_where(collection, farm_id=who.farm_id):
+            store.delete(collection, row["id"])
+    for row in run_rows:
+        store.delete("agent_runs", row["id"])
+    for row in store.list_where("llm_calls"):
+        if str(row.get("trace_id") or "") in trace_ids:
+            store.delete("llm_calls", row["id"])
+    for row in store.list_where("requests", farm_id=who.farm_id):
+        store.delete("requests", row["id"])
     return {
         "ok": True,
         "code": "origin_copy_erased",
-        "message": "Origin's stored facts were erased; recipient notices were recorded separately.",
+        "delivery_stubs": delivery_count,
+        "message": "Origin's activity facts, evidence, and managed delivery copies were erased; recipient notices were sent first.",
     }
 
 
@@ -455,22 +517,52 @@ def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> 
         raise HTTPException(404, {"code": "not_found", "message": "Farm not found"})
     rule_id = agent.default_rule_for(partner_id, farm)
     rule = load_rule(rule_id)
-    req = PartnerRequest(
-        id=f"req-{uuid4().hex[:10]}",
-        farm_id=body.farm_id,
-        partner_id=partner_id,
-        partner_name=agent.partner_display(partner_id),
-        purpose=body.purpose or rule["purpose"],
-        field_list=list(rule["fields"]),
-        rule_id=rule_id,
-        status="open",
-        created_at=datetime.now(timezone.utc),
-    )
-    store.put("requests", req.id, req.model_dump(mode="json"))
-    run = runs.create_for_request(req)
+    parcel_id = str(body.parcel_id or farm.get("default_parcel_id") or "")
+    parcel = store.get("parcels", parcel_id)
+    if not parcel_id or not parcel or parcel.get("farm_id") != body.farm_id:
+        raise HTTPException(
+            422,
+            {"code": "bad_parcel", "message": "A valid farm parcel is required"},
+        )
+    purpose = body.purpose or rule["purpose"]
+    field_list = list(rule["fields"])
+    candidates = [
+        row
+        for row in store.list_where("requests", farm_id=body.farm_id, partner_id=partner_id)
+        if row.get("status") in {"open", "linked"}
+        and _request_parcel(row, farm) == parcel_id
+        and row.get("purpose") == purpose
+        and (row.get("status") == "open" or row.get("field_list") == field_list)
+    ]
+    candidates.sort(key=lambda row: str(row.get("created_at") or ""))
+    reused = bool(candidates)
+    if reused:
+        req = store.as_request(candidates[0])
+        if req.status == "open" and (req.rule_id != rule_id or req.field_list != field_list):
+            req.rule_id = rule_id
+            req.field_list = field_list
+            store.put("requests", req.id, req.model_dump(mode="json"))
+    else:
+        req = PartnerRequest(
+            id=f"req-{uuid4().hex[:10]}",
+            farm_id=body.farm_id,
+            partner_id=partner_id,
+            partner_name=agent.partner_display(partner_id),
+            parcel_id=parcel_id,
+            purpose=purpose,
+            field_list=field_list,
+            rule_id=rule_id,
+            status="open",
+            created_at=datetime.now(timezone.utc),
+        )
+        store.put("requests", req.id, req.model_dump(mode="json"))
+    run = runs.latest_for_request(req.id)
+    if run is None:
+        run = runs.create_for_request(req)
     fresh = store.get("requests", req.id) or req.model_dump(mode="json")
     return {
         **fresh,
+        "reused": reused,
         "run": run.model_dump(mode="json"),
         "agent": {
             "decision": run.decision,
@@ -487,12 +579,14 @@ def desk_request(body: DeskRequestBody, who: Principal = Depends(principal)) -> 
 def execute_run(
     run_id: str,
     x_origin_worker_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
     expected = settings().internal_token
     if not expected or not x_origin_worker_token or not hmac.compare_digest(
         expected, x_origin_worker_token
     ):
         raise HTTPException(403, {"code": "forbidden", "message": "Worker token required"})
+    verify_worker_oidc(authorization)
     return runs.execute(run_id).model_dump(mode="json")
 
 
@@ -537,7 +631,12 @@ async def desk_questionnaire(
     farm = store.get("farms", farm_id)
     if not farm:
         raise HTTPException(404, {"code": "not_found", "message": "Farm not found"})
-    market = "US" if str(farm.get("country") or "").upper() == "US" else "EU"
+    if str(farm.get("country") or "").upper() != "US":
+        raise HTTPException(
+            422,
+            {"code": "unsupported_market", "message": "This hackathon build supports US farms only"},
+        )
+    market = "US"
     doc_bytes = await document.read() if document is not None else None
     if doc_bytes and len(doc_bytes) > settings().max_upload_bytes:
         raise HTTPException(

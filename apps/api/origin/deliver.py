@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -19,7 +18,7 @@ def issue(consent: ConsentRecord) -> tuple[TokenRecord, ReceiptRecord]:
         store.as_token(tokens[0])
         if tokens
         else TokenRecord(
-            id=f"tok-{uuid4().hex[:12]}",
+            id=f"tok-{consent.id.removeprefix('cns-')}",
             consent_id=consent.id,
             farm_id=consent.farm_id,
             partner_id=consent.partner_id,
@@ -30,7 +29,9 @@ def issue(consent: ConsentRecord) -> tuple[TokenRecord, ReceiptRecord]:
         )
     )
     if not tokens:
-        store.put("tokens", token.id, token.model_dump(mode="json"))
+        payload = token.model_dump(mode="json")
+        if not store.put_if_absent("tokens", token.id, payload):
+            token = store.as_token(store.get("tokens", token.id) or payload)
     receipts = [
         row
         for row in store.list_where("receipts", consent_id=consent.id)

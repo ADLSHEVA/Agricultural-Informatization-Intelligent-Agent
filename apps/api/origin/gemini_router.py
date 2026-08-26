@@ -133,11 +133,15 @@ def _generate(parts: list[Any], *, label: str) -> str | None:
     s = settings()
     try:
         resp = client.models.generate_content(model=s.gemini_model, contents=parts)
+        text = resp.text
     except Exception as exc:
         log.warning("%s failed on %s @ %s: %s", label, s.gemini_model, s.vertex_location, exc)
         _record_provenance(label, mode="fallback", reason=type(exc).__name__)
         return None
     usage = getattr(resp, "usage_metadata", None)
+    if not text:
+        _record_provenance(label, mode="fallback", reason="empty_model_response", usage=usage)
+        return None
     log.info(
         "%s model=%s location=%s prompt_tokens=%s output_tokens=%s total_tokens=%s",
         label,
@@ -148,7 +152,7 @@ def _generate(parts: list[Any], *, label: str) -> str | None:
         getattr(usage, "total_token_count", "?"),
     )
     _record_provenance(label, mode="vertex", usage=usage)
-    return resp.text or None
+    return text
 
 
 def _text_part(text: str):
@@ -231,6 +235,7 @@ def explain_consent(
     try:
         return PlainTalk.model_validate(_parse_json(raw))
     except Exception:
+        _record_provenance("explain_consent", mode="fallback", reason="invalid_model_json")
         return fallback
 
 
@@ -353,7 +358,7 @@ def _narration_fallback(
     if decision == "auto_deliver":
         return (
             f"Origin sent {partner_name} the fields you already agreed to "
-            f"({shown}). Not your yield or revenue. Revoke on Who if that was wrong."
+            f"({shown}). Not your yield or revenue. Revoke in Sharing if that was wrong."
         )
     if reason_code == "pending_decision":
         return (
@@ -387,7 +392,7 @@ def draft_rule_pack(
     document: bytes | None = None,
     document_mime: str = "application/pdf",
     partner_hint: str = "",
-    market: str = "EU",
+    market: str = "US",
 ) -> dict:
     """Read a partner questionnaire into a **proposed** rule pack.
 
@@ -425,8 +430,10 @@ def draft_rule_pack(
     try:
         proposal = _parse_json(raw)
     except Exception:
+        _record_provenance("draft_rule_pack", mode="fallback", reason="invalid_model_json")
         return fallback
     if not isinstance(proposal, dict) or not proposal.get("fields"):
+        _record_provenance("draft_rule_pack", mode="fallback", reason="invalid_model_payload")
         return fallback
     return proposal
 
@@ -462,22 +469,26 @@ def digest_terms(*, text: str, partner_hint: str = "", locale: str = "en") -> di
     try:
         digest = _parse_json(raw)
     except Exception:
+        _record_provenance("digest_terms", mode="fallback", reason="invalid_model_json")
         return fallback
-    return digest if isinstance(digest, dict) else fallback
+    if not isinstance(digest, dict):
+        _record_provenance("digest_terms", mode="fallback", reason="invalid_model_payload")
+        return fallback
+    return digest
 
 
 # Phrases that betray a field ask, in EN and FR. Used by both offline scanners —
 # and they must catch `yield` and `revenue`, because the whole point of the
 # sanitiser is visible only when something is actually refused.
 _FIELD_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("parcel_id", ("parcel", "field id", "field number", "block", "lpis", "parcelle", "îlot")),
-    ("date", ("date", "when", "day of application", "jour")),
-    ("product_name", ("product", "active substance", "chemical", "pesticide", "produit", "substance")),
+    ("parcel_id", ("parcel", "field id", "field number", "block")),
+    ("date", ("date", "when", "day of application")),
+    ("product_name", ("product", "active substance", "chemical", "pesticide", "substance")),
     ("rate", ("rate", "dose", "dosage", "litres per", "l/ha", "application rate")),
-    ("unit", ("unit", "unité")),
-    ("buffer_m", ("buffer", "filter strip", "watercourse", "gaec", "bande tampon", "cours d'eau")),
-    ("yield", ("yield", "tonnes per hectare", "t/ha", "harvest volume", "rendement")),
-    ("revenue", ("revenue", "price", "income", "turnover", "sale value", "chiffre", "revenu")),
+    ("unit", ("unit",)),
+    ("buffer_m", ("buffer", "filter strip", "watercourse")),
+    ("yield", ("yield", "bushels per acre", "harvest volume")),
+    ("revenue", ("revenue", "price", "income", "turnover", "sale value")),
 )
 
 
@@ -490,9 +501,9 @@ def _cued_fields(text: str) -> list[str]:
 
 
 def _questionnaire_heuristic(text: str, partner_hint: str, market: str) -> dict:
-    fields = _cued_fields(text) or ["parcel_id", "date", "product_name", "rate", "unit", "buffer_m"]
+    fields = _cued_fields(text)
     low = (text or "").lower()
-    purpose = "seasonal_spray_statement" if market.upper() == "US" else "seasonal_plant_protection_statement"
+    purpose = "seasonal_spray_statement"
     if "carbon" in low or "mrv" in low:
         purpose = "carbon_practice_statement"
     elif "organic" in low or "certif" in low:

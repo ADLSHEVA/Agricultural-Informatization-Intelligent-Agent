@@ -78,6 +78,52 @@ def put(collection: str, item_id: str, payload: dict[str, Any]) -> None:
     _collection(collection).document(item_id).set(_to_firestore(payload))
 
 
+def put_if_status(
+    collection: str,
+    item_id: str,
+    payload: dict[str, Any],
+    allowed_statuses: set[str],
+) -> bool:
+    """Firestore transaction used as the AgentRun compare-and-set boundary."""
+    from google.cloud import firestore
+
+    client = _client()
+    ref = _collection(collection).document(item_id)
+    transaction = client.transaction()
+
+    @firestore.transactional
+    def update(transaction) -> bool:
+        snap = ref.get(transaction=transaction)
+        if not snap.exists:
+            return False
+        current = _from_firestore(snap.to_dict())
+        if current.get("status") not in allowed_statuses:
+            return False
+        transaction.set(ref, _to_firestore(payload))
+        return True
+
+    return bool(update(transaction))
+
+
+def put_if_absent(collection: str, item_id: str, payload: dict[str, Any]) -> bool:
+    """Create a document once using a Firestore transaction."""
+    from google.cloud import firestore
+
+    client = _client()
+    ref = _collection(collection).document(item_id)
+    transaction = client.transaction()
+
+    @firestore.transactional
+    def create(transaction) -> bool:
+        snap = ref.get(transaction=transaction)
+        if snap.exists:
+            return False
+        transaction.set(ref, _to_firestore(payload))
+        return True
+
+    return bool(create(transaction))
+
+
 def get(collection: str, item_id: str) -> dict[str, Any] | None:
     snap = _collection(collection).document(item_id).get()
     return _from_firestore(snap.to_dict()) if snap.exists else None
@@ -91,9 +137,16 @@ def list_where(collection: str, **equals: Any) -> list[dict[str, Any]]:
     from google.cloud.firestore_v1.base_query import FieldFilter
 
     query = _collection(collection)
-    for field, value in equals.items():
+    # Use at most one server-side equality filter, then apply the remaining
+    # predicates in process. This small hackathon dataset does not need a
+    # composite index for every farm/partner/status combination, and it avoids
+    # a production-only FAILED_PRECONDITION that the JSON tests cannot reveal.
+    items = list(equals.items())
+    if items:
+        field, value = items[0]
         query = query.where(filter=FieldFilter(field, "==", value))
-    return [_from_firestore(snap.to_dict()) for snap in query.stream()]
+    rows = [_from_firestore(snap.to_dict()) for snap in query.stream()]
+    return [row for row in rows if all(row.get(key) == value for key, value in items)]
 
 
 def snapshot() -> dict[str, Any]:

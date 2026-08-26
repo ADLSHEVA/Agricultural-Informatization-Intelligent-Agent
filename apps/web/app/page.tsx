@@ -79,22 +79,16 @@ export default function TodayPage() {
     }
   }
 
-  const request = data?.open_request;
-  const draft = data?.draft_consent;
+  const requests: any[] = data?.open_requests ?? (data?.open_request ? [data.open_request] : []);
+  const consentDrafts: any[] = data?.draft_consents ?? (data?.draft_consent ? [data.draft_consent] : []);
   const lastAuto = data?.last_auto;
   const lastDecision = data?.last_decision;
   const farmName = data?.farm?.display_name ?? "Riverside Farms";
   const runs: AgentRun[] = data?.agent_runs ?? [];
   const policies = data?.standing_policies?.length ?? 0;
-  const pending = drafts.length + (request ? 1 : 0) + (draft ? 1 : 0);
+  const pending = drafts.length + requests.length + consentDrafts.length;
   const latestRun = runs[0];
   const loading = !data && !err;
-
-  const askNote =
-    lastDecision?.decision === "ask_farmer" && lastDecision?.consent_id === draft?.id
-      ? lastDecision
-      : null;
-  const overAsk: string[] = askNote?.extra_fields ?? [];
 
   return (
     <>
@@ -198,24 +192,27 @@ export default function TodayPage() {
             </section>
           )}
 
-          {request && (
-            <section className="card task-card task-primary">
+          {requests.map((request) => {
+            const purpose = String(request.purpose || "farm data statement").replace(/_/g, " ");
+            return <section key={request.id} className="card task-card task-primary">
               <div className="task-copy">
                 <span className="task-label">Field record needed</span>
-                <h2>{request.partner_name} needs a spray statement</h2>
-                <p>Record this season’s spray work once. You will review the extracted facts and exactly what the elevator can receive.</p>
+                <h2>{request.partner_name} needs a {purpose}</h2>
+                <p>Record the work for {request.parcel_id || "the requested field"}. You will review the extracted facts and exactly what the elevator can receive.</p>
                 <div className="request-meta">
-                  <span>Purpose: spray statement</span>
+                  <span>Purpose: {purpose}</span>
                   <span>Yield excluded</span>
                   <span>Revenue excluded</span>
                 </div>
               </div>
-              <BigButton onClick={() => router.push("/capture")}>Record field work</BigButton>
-            </section>
-          )}
+              <BigButton onClick={() => router.push(`/capture?parcel=${encodeURIComponent(request.parcel_id || "p3")}`)}>Record field work</BigButton>
+            </section>;
+          })}
 
-          {draft && (
-            <section className="card task-card task-attention">
+          {consentDrafts.map((draft) => {
+            const askNote = lastDecision?.decision === "ask_farmer" && lastDecision?.consent_id === draft.id ? lastDecision : null;
+            const overAsk: string[] = askNote?.extra_fields ?? [];
+            return <section key={draft.id} className="card task-card task-attention">
               <div className="task-copy">
                 <span className="task-label">Your approval is required</span>
                 <h2>Review before {draft.partner_name} sees anything</h2>
@@ -225,10 +222,10 @@ export default function TodayPage() {
                 )}
               </div>
               <BigButton onClick={() => router.push(`/consent/${draft.id}`)}>Review exact data</BigButton>
-            </section>
-          )}
+            </section>;
+          })}
 
-          {!request && !draft && !lastAuto && drafts.length === 0 && !justSaved && !loading && (
+          {requests.length === 0 && consentDrafts.length === 0 && !lastAuto && drafts.length === 0 && !justSaved && !loading && (
             <section className="card task-card task-calm">
               <div className="task-copy">
                 <span className="task-label">No partner is waiting</span>

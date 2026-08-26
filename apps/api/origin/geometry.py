@@ -6,7 +6,7 @@ from shapely.ops import unary_union
 from origin.models import Parcel
 
 # Demo drainage ditch along the north edge of field 3 (metres, local projected sketch).
-# US primary: ~16 ft filter strip. EU adapter (GAEC 4) reuses the same geometry.
+# US demo: 5 m / 16.4 ft filter strip.
 # SINGLE-FARM ASSUMPTION: one module-level watercourse serves the seeded demo
 # farm only. A second farm needs per-farm watercourses on the parcel/farm record.
 WATERCOURSE = LineString([(0, 80), (220, 80)])
@@ -28,7 +28,7 @@ def buffer_ok(parcel: Parcel, claimed_buffer_m: float | None) -> dict:
     """Deterministic unsprayed-strip check. No LLM.
 
     Weekend rule: if the field meets the ditch, claimed buffer must be
-    >= the field's required width (default 5 m / 16 ft).
+    >= the field's required width (default 5 m / 16.4 ft).
     """
     poly = parcel_polygon(parcel)
     distance = poly.distance(WATERCOURSE)
@@ -40,18 +40,12 @@ def buffer_ok(parcel: Parcel, claimed_buffer_m: float | None) -> dict:
     ok = (not touches) or claimed >= required
     return {
         "buffer_ok": ok,
-        "gaec4_buffer_ok": ok,
         "touches_watercourse": touches,
         "required_m": required,
         "claimed_m": claimed,
         "distance_m": round(float(distance), 2),
         "frontage_m": round(float(frontage), 2),
     }
-
-
-def gaec4_ok(parcel: Parcel, claimed_buffer_m: float | None) -> dict:
-    """EU adapter name. Same deterministic check as buffer_ok."""
-    return buffer_ok(parcel, claimed_buffer_m)
 
 
 def watercourse_geojson() -> dict:

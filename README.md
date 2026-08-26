@@ -55,12 +55,12 @@ The same lifecycle runs inline with a local JSON store, so the complete demo rem
 ## Three-minute demo
 
 1. On **Today**, Heartland Grain requests a seasonal spray statement.
-2. On **Speak**, record or type the field operation. Gemini produces a draft with confidence and provenance; the farmer confirms it.
+2. On **Record**, record or type the field operation. Gemini produces a draft with confidence and provenance; the farmer confirms it.
 3. Origin compiles only the requested fields and shows their exact values on the consent card. Give permission and optionally allow identical future requests.
 4. The Partner Desk receives the package and exposes its delivery destination and trace ID.
 5. Save a second field operation while no request is open; Origin stores it and sends nothing. When the partner asks, Cloud Tasks runs the request and delivers only because it fits the standing permission exactly.
 6. Change the purpose: the next run stops at `waiting_for_farmer`.
-7. In **Who**, revoke access or erase Origin's copy. Origin records recipient notices without falsely claiming downloaded copies disappeared.
+7. In **Sharing**, revoke access and export the audit trail. Private tenants can erase Origin-managed activity and delivery copies; the public shared demo disables destructive erasure.
 
 The narrated version is in [docs/demo-script.md](docs/demo-script.md).
 
@@ -70,6 +70,8 @@ The narrated version is in [docs/demo-script.md](docs/demo-script.md).
 - Standing permission requires an exact partner and purpose, a non-expired grant, and `requested_fields ⊆ allowed_fields`.
 - Every model result is marked with provider, model, location, confidence, and fallback state.
 - Task retries reuse request, consent, and delivery identifiers.
+- Every request names a parcel; a later event from another field can never satisfy it.
+- The Cloud Tasks worker requires both a private HMAC header and a verified Google OIDC identity in cloud deployments.
 - Revocation disables Origin-issued access immediately; notices accurately describe limits on previously downloaded data.
 - Yield and revenue are denied by the compiler even when a questionnaire asks for them.
 - Vertex AI uses Application Default Credentials; no model API key is stored in the repository.
@@ -79,7 +81,7 @@ The narrated version is in [docs/demo-script.md](docs/demo-script.md).
 ```text
 apps/web/                 Next.js farmer experience and Partner Desk
 apps/api/origin/          FastAPI agent, consent, compiler, and cloud adapters
-apps/api/rules/           Deterministic US and EU share rules
+apps/api/rules/           Deterministic US share rule
 apps/api/tests/           Offline lifecycle and safety tests
 deploy/                   Cloud Build and Google Cloud deployment files
 docs/                     English architecture and submission material
@@ -121,7 +123,7 @@ npx tsc --noEmit
 npm run build
 ```
 
-The offline suite covers the capture-to-delivery loop, AgentRun state transitions, task authentication, standing-permission containment, duplicate delivery protection, revoke/erase semantics, questionnaire sanitisation, tenancy, and Gemini fallback behavior.
+The 73-test offline suite covers the capture-to-delivery loop, AgentRun state transitions and compare-and-set behavior, HMAC/OIDC task authentication, parcel binding, standing-permission containment, retry recovery, revoke/erase semantics, questionnaire sanitisation, tenancy, and Gemini fallback behavior.
 
 ## Deploy
 
@@ -130,10 +132,10 @@ The production split keeps the public Next.js site on Render while the agent run
 First deploy the API with an authenticated `gcloud` CLI that can create Cloud Run, Cloud Tasks, Firestore, Cloud Storage, Artifact Registry, IAM, and Cloud Build resources:
 
 ```powershell
-.\deploy\deploy.ps1 -ProjectId "YOUR_PROJECT_ID" -ApiOnly
+.\deploy\deploy.ps1 -ProjectId "YOUR_PROJECT_ID" -FrontendOrigin "https://YOUR-SERVICE.onrender.com"
 ```
 
-The script enables required APIs, creates a least-purpose runtime service account, queue, bucket, and Firestore database, deploys the API, and configures authenticated task dispatch. Then create the Render service from [`render.yaml`](render.yaml), set `NEXT_PUBLIC_API_URL` to the Cloud Run API URL, and update the API's `ORIGIN_CORS_ORIGINS` to the resulting Render HTTPS origin. `.gcloudignore` and `.gitignore` keep local data, credentials, notes, caches, and tools out of deployment uploads. Review the [submission checklist](docs/submission.md) before recording the demo.
+The script enables required APIs, creates a least-purpose runtime service account, queue, bucket, and Firestore database, deploys only the API by default, and configures Cloud Tasks with HMAC plus OIDC verification. Create the Render service from [`render.yaml`](render.yaml); use `-DeployWebToCloudRun` only for an intentional alternate web deployment. `.gcloudignore` and `.gitignore` keep local data, credentials, notes, caches, and tools out of deployment uploads. Review the [submission checklist](docs/submission.md) before recording the demo.
 
 ## Design choices
 

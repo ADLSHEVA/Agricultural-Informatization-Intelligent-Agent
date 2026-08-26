@@ -18,3 +18,5 @@ services:
         value: https://origin-api-n4v5i2jtda-ew.a.run.app
       - key: NEXT_PUBLIC_DEMO_MODE
         value: "true"
+      - key: NEXT_PUBLIC_SHARED_DEMO
+        value: "true"

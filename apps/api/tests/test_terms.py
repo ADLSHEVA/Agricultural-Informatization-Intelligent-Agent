@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from origin.main import app
 from origin.models import StandingPolicy
 from origin.seed import ensure_demo
+from origin.questionnaire import canonical_name
+from origin.terms import allowed_now
 
 FARMER = {"Authorization": "Bearer demo-farmer"}
 PARTNER = {"Authorization": "Bearer demo-partner"}
@@ -119,3 +121,17 @@ def test_over_ask_is_empty_when_the_policy_already_covers_the_ask(local_store):
     assert "revenue" not in body["over_ask"]
     for kept in ALLOWED:
         assert kept not in body["over_ask"]
+
+
+def test_terms_field_coinages_use_the_same_canonical_gate():
+    assert canonical_name("delivered_lot_yield") == "yield"
+    assert canonical_name("crop_sale_revenue") == "revenue"
+    assert canonical_name("watercourse_buffer_strip_width") == "buffer_m"
+
+
+def test_unknown_partner_does_not_inherit_another_partners_allowance(local_store):
+    ensure_demo()
+    _arm_standing(local_store)
+    allowed, matched = allowed_now("demo-farm", "Unrelated Analytics Inc")
+    assert allowed == []
+    assert matched is None
