@@ -33,6 +33,7 @@ service-account*.json
 credentials*.json
 
 # local working notes — not published
+.scratch/
 description_proj.txt
 *.zh.md
 Origin-*.txt
